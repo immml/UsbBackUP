@@ -1,4 +1,4 @@
-# usbguard build script (Windows / PowerShell).
+# usbbackup build script (Windows / PowerShell).
 #
 # NOTE: This file is intentionally ASCII-only. Windows PowerShell 5.1 reads
 # .ps1 files without a BOM using the ANSI codepage, which corrupts non-ASCII
@@ -96,10 +96,10 @@ try {
     $env:GOARCH = 'amd64'
     $env:CGO_ENABLED = '0'
 
-    # usbguard is a background daemon: use the windowsgui subsystem so it does
+    # usbbackup is a background daemon: use the windowsgui subsystem so it does
     # not allocate a console window. The other three are interactive tools.
     $targets = @(
-        @{ Name = 'usbguard';  Pkg = './cmd/usbguard';  Gui = $true  },
+        @{ Name = 'usbbackup';  Pkg = './cmd/usbbackup';  Gui = $true  },
         @{ Name = 'usbkeygen'; Pkg = './cmd/usbkeygen'; Gui = $false },
         @{ Name = 'usbcomp';   Pkg = './cmd/usbcomp';   Gui = $false },
         @{ Name = 'usbunseal'; Pkg = './cmd/usbunseal'; Gui = $false }

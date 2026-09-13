@@ -1,5 +1,5 @@
 // Package version 保存构建期注入的版本信息。
-// 通过 -ldflags "-X usbguard/internal/version.Version=..." 注入。
+// 通过 -ldflags "-X github.com/immml/UsbBackUP/internal/version.Version=..." 注入。
 package version
 
 import (
@@ -20,7 +20,7 @@ var (
 )
 
 // AppName 是程序集名称，用于产物命名、日志与互斥体名。
-const AppName = "usbguard"
+const AppName = "usbbackup"
 
 // String 返回单行版本描述。
 func String() string {

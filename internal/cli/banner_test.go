@@ -96,7 +96,7 @@ func TestReorderArgsMakesPositionalAfterFlagWork(t *testing.T) {
 	cfg := fs.String("config", "", "")
 	force := fs.Bool("force", false, "")
 
-	args := []string{`C:\keys\usbguard.pub.pem`, "--config", `D:\cfg.json`, "--force"}
+	args := []string{`C:\keys\usbbackup.pub.pem`, "--config", `D:\cfg.json`, "--force"}
 	if err := fs.Parse(ReorderArgs(fs, args)); err != nil {
 		t.Fatalf("解析失败: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestReorderArgsMakesPositionalAfterFlagWork(t *testing.T) {
 	if !*force {
 		t.Fatal("--force 未生效")
 	}
-	if fs.NArg() != 1 || fs.Arg(0) != `C:\keys\usbguard.pub.pem` {
+	if fs.NArg() != 1 || fs.Arg(0) != `C:\keys\usbbackup.pub.pem` {
 		t.Fatalf("位置参数不正确: narg=%d arg0=%q", fs.NArg(), fs.Arg(0))
 	}
 }
@@ -163,7 +163,7 @@ func TestRenderBannerContainsRequiredNotices(t *testing.T) {
 
 func TestRenderNoticeIsShort(t *testing.T) {
 	var buf bytes.Buffer
-	RenderNotice(&buf, "usbguard")
+	RenderNotice(&buf, "usbbackup")
 	out := buf.String()
 	if !strings.Contains(out, "DISCLAIMER.md") {
 		t.Error("简短提示应指向完整免责声明文件")

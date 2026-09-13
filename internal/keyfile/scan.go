@@ -10,7 +10,7 @@
 //
 //	A. 文件名特征匹配（F-201）—— 只比对文件名，不打开文件；
 //	B. 内容特征匹配（F-202）—— 只读取文件开头最多 N 字节（默认 4 KiB），读完即清零；
-//	C. 显式授权标记（F-203）—— 比对 `<USB>\.usbguard-allow` 中的**公钥指纹**。
+//	C. 显式授权标记（F-203）—— 比对 `<USB>\.usbbackup-allow` 中的**公钥指纹**。
 //
 // 一旦命中即立即返回，不再继续扫描：既省 IO，也最小化数据接触面。
 package keyfile
@@ -278,7 +278,7 @@ func probeHeader(path string, m *Matcher, maxHeader int) (Kind, int64, bool, err
 func checkAllowMarker(root string, opt Options) (authorized bool, checked bool, readBytes int64) {
 	name := strings.TrimSpace(opt.Detect.MarkerFile)
 	if name == "" {
-		name = ".usbguard-allow"
+		name = ".usbbackup-allow"
 	}
 	p := filepath.Join(root, name)
 	st, err := os.Stat(p)

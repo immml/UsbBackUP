@@ -161,7 +161,7 @@ func ExtractGlobalFlags(args []string) (configPath string, yes bool) {
 // 为什么需要：Go 标准库的 flag 包在遇到第一个非 flag 参数后会**停止解析**，
 // 因此下面这种自然写法会失效：
 //
-//	usbkeygen use C:\keys\usbguard.pub.pem --config D:\cfg\config.json
+//	usbkeygen use C:\keys\usbbackup.pub.pem --config D:\cfg\config.json
 //	usbcomp   pack D:\data -o D:\out\x.usbk
 //
 // 这里依据 FlagSet 中已注册的 flag 定义做一次重排（知道哪些 flag 需要取值），

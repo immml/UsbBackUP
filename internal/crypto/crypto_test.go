@@ -181,7 +181,7 @@ func min(a, b int) int {
 
 func TestDecryptRejectsTamperTruncateWrongKey(t *testing.T) {
 	key := testKey(t)
-	plain := bytes.Repeat([]byte("usbguard-tamper-test"), 5000)
+	plain := bytes.Repeat([]byte("usbbackup-tamper-test"), 5000)
 
 	var buf bytes.Buffer
 	if _, err := EncryptStream(&buf, bytes.NewReader(plain), EncryptOptions{
@@ -276,8 +276,8 @@ func TestOAEPLabelIsStableProtocolConstant(t *testing.T) {
 	if got := string(OAEPLabel); got != "usbbackup/v1" {
 		t.Fatalf("OAEP 域分隔 label 被改动（%q）：这会破坏容器格式兼容性", got)
 	}
-	if strings.Contains(string(OAEPLabel), "github.com") || strings.Contains(string(OAEPLabel), "usbguard") {
-		t.Fatalf("label 不得由模块路径或旧产品名派生: %q", OAEPLabel)
+	if strings.Contains(string(OAEPLabel), "github.com") {
+		t.Fatalf("label 不得由模块路径派生，必须是固定的协议域标识: %q", OAEPLabel)
 	}
 }
 

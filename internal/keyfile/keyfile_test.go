@@ -132,7 +132,7 @@ func TestScanDetectsAndIgnores(t *testing.T) {
 	ctx := context.Background()
 	det := config.DetectConfig{
 		Mode: "both", MaxDepth: 4, MaxFiles: 1000,
-		MaxHeadersBytes: 4096, TimeoutSec: 10, MarkerFile: ".usbguard-allow", ScanContents: true,
+		MaxHeadersBytes: 4096, TimeoutSec: 10, MarkerFile: ".usbbackup-allow", ScanContents: true,
 	}
 
 	t.Run("普通目录不应判定为授权", func(t *testing.T) {
@@ -182,7 +182,7 @@ func TestScanDetectsAndIgnores(t *testing.T) {
 
 	t.Run("显式授权标记需匹配指纹", func(t *testing.T) {
 		dir := t.TempDir()
-		mustWrite(t, filepath.Join(dir, ".usbguard-allow"), "fingerprint=aabbccddeeff0011\n")
+		mustWrite(t, filepath.Join(dir, ".usbbackup-allow"), "fingerprint=aabbccddeeff0011\n")
 		res, err := Scan(ctx, Options{Root: dir, Matcher: m, Detect: det, AllowedFingerprint: "aabb ccdd eeff 0011"})
 		if err != nil {
 			t.Fatal(err)

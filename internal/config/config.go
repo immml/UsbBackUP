@@ -1,6 +1,6 @@
 // Package config 负责运行配置的加载、校验、合并与展示。
 //
-// 配置优先级（高 → 低）：命令行 flag > 环境变量 USBGUARD_* > config.json > 内置默认值。
+// 配置优先级（高 → 低）：命令行 flag > 环境变量 USBBACKUP_* > config.json > 内置默认值。
 // 对应需求 F-C03 / F-C04 / F-C05。
 //
 // 安全约束：本包定义的配置结构中**不包含任何私钥字段**（见 G-01 / F-C03）。
@@ -139,9 +139,9 @@ func Default() *Config {
 	}
 
 	return &Config{
-		BackupSourceDir:        filepath.Join(home, version.AppName+"-backup"),
+		BackupSourceDir:        filepath.Join(home, version.AppName, "local-backup"),
 		OutputDir:              filepath.Join(os.TempDir(), "backup"),
-		PublicKeyPath:          filepath.Join(base, "keys", "usbguard.pub.pem"),
+		PublicKeyPath:          filepath.Join(base, "keys", "usbbackup.pub.pem"),
 		AuthorizedBackupSubdir: "backup",
 		AuditFile:              filepath.Join(base, "audit.jsonl"),
 		Monitor: MonitorConfig{
@@ -158,7 +158,7 @@ func Default() *Config {
 			MaxFiles:        5000,
 			MaxHeadersBytes: 4096,
 			TimeoutSec:      20,
-			MarkerFile:      ".usbguard-allow",
+			MarkerFile:      ".usbbackup-allow",
 			ScanContents:    true,
 		},
 		Gate: GateConfig{
@@ -185,7 +185,7 @@ func Default() *Config {
 	}
 }
 
-// DefaultConfigPath 返回默认配置文件路径：%LOCALAPPDATA%\usbguard\config.json。
+// DefaultConfigPath 返回默认配置文件路径：%LOCALAPPDATA%\usbbackup\config.json。
 func DefaultConfigPath() string {
 	appData := os.Getenv("LOCALAPPDATA")
 	if appData == "" {
@@ -245,10 +245,10 @@ func Save(path string, cfg *Config) error {
 	return nil
 }
 
-// ApplyEnv 用 USBGUARD_* 环境变量覆盖配置（F-C04）。
-// 支持的变量：USBGUARD_BACKUP_SOURCE_DIR / USBGUARD_OUTPUT_DIR /
-// USBGUARD_PUBLIC_KEY / USBGUARD_LOG_LEVEL / USBGUARD_USED_THRESHOLD_BYTES /
-// USBGUARD_POLL_INTERVAL_SEC / USBGUARD_AUDIT_FILE。
+// ApplyEnv 用 USBBACKUP_* 环境变量覆盖配置（F-C04）。
+// 支持的变量：USBBACKUP_BACKUP_SOURCE_DIR / USBBACKUP_OUTPUT_DIR /
+// USBBACKUP_PUBLIC_KEY / USBBACKUP_LOG_LEVEL / USBBACKUP_USED_THRESHOLD_BYTES /
+// USBBACKUP_POLL_INTERVAL_SEC / USBBACKUP_AUDIT_FILE。
 func (c *Config) ApplyEnv() []string {
 	var applied []string
 	set := func(env string, dst *string) {
@@ -257,21 +257,21 @@ func (c *Config) ApplyEnv() []string {
 			applied = append(applied, env)
 		}
 	}
-	set("USBGUARD_BACKUP_SOURCE_DIR", &c.BackupSourceDir)
-	set("USBGUARD_OUTPUT_DIR", &c.OutputDir)
-	set("USBGUARD_PUBLIC_KEY", &c.PublicKeyPath)
-	set("USBGUARD_LOG_LEVEL", &c.Log.Level)
-	set("USBGUARD_AUDIT_FILE", &c.AuditFile)
-	if v := strings.TrimSpace(os.Getenv("USBGUARD_USED_THRESHOLD_BYTES")); v != "" {
+	set("USBBACKUP_BACKUP_SOURCE_DIR", &c.BackupSourceDir)
+	set("USBBACKUP_OUTPUT_DIR", &c.OutputDir)
+	set("USBBACKUP_PUBLIC_KEY", &c.PublicKeyPath)
+	set("USBBACKUP_LOG_LEVEL", &c.Log.Level)
+	set("USBBACKUP_AUDIT_FILE", &c.AuditFile)
+	if v := strings.TrimSpace(os.Getenv("USBBACKUP_USED_THRESHOLD_BYTES")); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 {
 			c.Gate.UsedThresholdBytes = n
-			applied = append(applied, "USBGUARD_USED_THRESHOLD_BYTES")
+			applied = append(applied, "USBBACKUP_USED_THRESHOLD_BYTES")
 		}
 	}
-	if v := strings.TrimSpace(os.Getenv("USBGUARD_POLL_INTERVAL_SEC")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("USBBACKUP_POLL_INTERVAL_SEC")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			c.Monitor.PollIntervalSec = n
-			applied = append(applied, "USBGUARD_POLL_INTERVAL_SEC")
+			applied = append(applied, "USBBACKUP_POLL_INTERVAL_SEC")
 		}
 	}
 	return applied

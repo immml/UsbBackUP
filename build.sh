@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# usbguard build script (bash / Git Bash / WSL / Linux cross-compile).
+# usbbackup build script (bash / Git Bash / WSL / Linux cross-compile).
 #
 # Usage:
 #   ./build.sh                  Build all 4 executables into ./dist/
@@ -68,8 +68,8 @@ fi
 echo "[4/4] build"
 export GOOS=windows GOARCH=amd64 CGO_ENABLED=0
 
-# usbguard is a background daemon: windowsgui subsystem avoids a console window.
-"$GO" build -trimpath -ldflags "$LD -H=windowsgui" -o "$DIST/usbguard.exe"  ./cmd/usbguard
+# usbbackup is a background daemon: windowsgui subsystem avoids a console window.
+"$GO" build -trimpath -ldflags "$LD -H=windowsgui" -o "$DIST/usbbackup.exe"  ./cmd/usbbackup
 "$GO" build -trimpath -ldflags "$LD"                -o "$DIST/usbkeygen.exe" ./cmd/usbkeygen
 "$GO" build -trimpath -ldflags "$LD"                -o "$DIST/usbcomp.exe"   ./cmd/usbcomp
 "$GO" build -trimpath -ldflags "$LD"                -o "$DIST/usbunseal.exe" ./cmd/usbunseal

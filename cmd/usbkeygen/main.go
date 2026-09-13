@@ -90,7 +90,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 func printUsage(w io.Writer) {
-	cli.PrintHelp(w, "usbkeygen —— usbguard 密钥生成器", []string{
+	cli.PrintHelp(w, "usbkeygen —— usbbackup 密钥生成器", []string{
 		"用法：",
 		"  usbkeygen generate [选项]          生成新的 RSA 密钥对",
 		"  usbkeygen use <公钥文件>            选择已有公钥并登记到配置",
@@ -103,14 +103,14 @@ func printUsage(w io.Writer) {
 		"generate 选项：",
 		"  --bits int         RSA 位数（默认 4096，下限 2048，上限 8192）",
 		"  --out string       输出目录（默认当前目录）",
-		"  --private string   私钥输出路径（默认 <out>/usbguard.key.pem）",
-		"  --public string    公钥输出路径（默认 <out>/usbguard.pub.pem）",
+		"  --private string   私钥输出路径（默认 <out>/usbbackup.key.pem）",
+		"  --public string    公钥输出路径（默认 <out>/usbbackup.pub.pem）",
 		"  --force            允许覆盖已存在的密钥文件",
 		"  --pass             交互式设置私钥口令（无回显）",
 		"  --pass-file string 从文件读取口令（首行）",
 		"",
 		"use 选项：",
-		"  --config string    配置文件路径（默认 %LOCALAPPDATA%\\usbguard\\config.json）",
+		"  --config string    配置文件路径（默认 %LOCALAPPDATA%\\usbbackup\\config.json）",
 		"",
 		"安全提示：generate 成功后请立即离线备份私钥与口令。私钥丢失则密文不可恢复。",
 	})
@@ -208,7 +208,7 @@ func cmdUse(args []string, cfgPath string, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "登记失败：%v\n", err)
 		if strings.Contains(err.Error(), "私钥") {
-			fmt.Fprintln(stderr, "提示：配置文件只允许保存公钥；请提供 usbguard.pub.pem 这类公钥文件。")
+			fmt.Fprintln(stderr, "提示：配置文件只允许保存公钥；请提供 usbbackup.pub.pem 这类公钥文件。")
 		}
 		return cli.ExitRuntime
 	}

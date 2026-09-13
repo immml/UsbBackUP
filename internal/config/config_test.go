@@ -143,12 +143,12 @@ func TestValidateNormalizesLogDefaults(t *testing.T) {
 }
 
 func TestApplyEnv(t *testing.T) {
-	t.Setenv("USBGUARD_BACKUP_SOURCE_DIR", `D:\mybackup`)
-	t.Setenv("USBGUARD_OUTPUT_DIR", `D:\out`)
-	t.Setenv("USBGUARD_PUBLIC_KEY", `D:\keys\pub.pem`)
-	t.Setenv("USBGUARD_LOG_LEVEL", "warn")
-	t.Setenv("USBGUARD_USED_THRESHOLD_BYTES", "1073741824")
-	t.Setenv("USBGUARD_POLL_INTERVAL_SEC", "7")
+	t.Setenv("USBBACKUP_BACKUP_SOURCE_DIR", `D:\mybackup`)
+	t.Setenv("USBBACKUP_OUTPUT_DIR", `D:\out`)
+	t.Setenv("USBBACKUP_PUBLIC_KEY", `D:\keys\pub.pem`)
+	t.Setenv("USBBACKUP_LOG_LEVEL", "warn")
+	t.Setenv("USBBACKUP_USED_THRESHOLD_BYTES", "1073741824")
+	t.Setenv("USBBACKUP_POLL_INTERVAL_SEC", "7")
 
 	c := Default()
 	applied := c.ApplyEnv()
@@ -166,8 +166,8 @@ func TestApplyEnv(t *testing.T) {
 	}
 
 	// 非法数值应被忽略而不是污染配置。
-	t.Setenv("USBGUARD_USED_THRESHOLD_BYTES", "不是数字")
-	t.Setenv("USBGUARD_POLL_INTERVAL_SEC", "-1")
+	t.Setenv("USBBACKUP_USED_THRESHOLD_BYTES", "不是数字")
+	t.Setenv("USBBACKUP_POLL_INTERVAL_SEC", "-1")
 	c2 := Default()
 	c2.ApplyEnv()
 	if c2.Gate.UsedThresholdBytes != DefaultUsedThresholdBytes {
@@ -179,8 +179,8 @@ func TestApplyEnv(t *testing.T) {
 }
 
 func TestExpandPath(t *testing.T) {
-	t.Setenv("USBGUARD_TEST_ROOT", `D:\root`)
-	if got := ExpandPath(`%USBGUARD_TEST_ROOT%\a\b`); got != filepath.FromSlash(`D:\root\a\b`) {
+	t.Setenv("USBBACKUP_TEST_ROOT", `D:\root`)
+	if got := ExpandPath(`%USBBACKUP_TEST_ROOT%\a\b`); got != filepath.FromSlash(`D:\root\a\b`) {
 		t.Fatalf("百分号变量未展开: %q", got)
 	}
 	if got := ExpandPath(""); got != "" {

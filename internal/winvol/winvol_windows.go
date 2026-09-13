@@ -133,7 +133,7 @@ func DriveType(root string) (uint32, error) {
 // Query 查询单个卷信息。
 //
 // 无论卷是否为可移动介质，都会尽力读取容量与卷标：这些信息对诊断与审计
-// 同样有价值（例如 `usbguard list --all`）。非可移动卷返回 ErrNotRemovable，
+// 同样有价值（例如 `usbbackup list --all`）。非可移动卷返回 ErrNotRemovable，
 // 调用方据此判定"非候选"（F-301）。
 func Query(root string) (Volume, error) {
 	norm, err := NormalizeRoot(root)

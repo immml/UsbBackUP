@@ -67,9 +67,9 @@ const (
 	MaxRSAKeyBits = 8192
 
 	// DefaultPrivateKeyName 是默认私钥文件名。
-	DefaultPrivateKeyName = "usbguard.key.pem"
+	DefaultPrivateKeyName = "usbbackup.key.pem"
 	// DefaultPublicKeyName 是默认公钥文件名。
-	DefaultPublicKeyName = "usbguard.pub.pem"
+	DefaultPublicKeyName = "usbbackup.pub.pem"
 )
 
 // 错误。
