@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 项目代号 | `usbguard` |
+| 项目代号 | `usbbackup` |
 | 目标平台 | Windows 10 1809+ / Windows 11 / Windows Server 2019+（**amd64，仅 Windows，不跨平台**） |
 | 运行形态 | 无 UI：命令行 + 常驻后台进程；可注册为 Windows 服务 |
 | 技术栈 | Go 1.24+（开发环境实测 Go 1.27.1），**零第三方依赖，只用标准库** |
@@ -51,7 +51,7 @@ USB 插入事件监控、私钥存在性检测、授权分支（本地备份回�
 |---|---|---|---|---|---|---|
 | F-201 | 检测模式 A（启发式）：按文件名模式匹配 | P0 | 目录项名 | 命中列表 | 无命中 → 返回 false | 只比对文件名，不打开文件 |
 | F-202 | 检测模式 B（内容特征）：仅读每个候选文件**前 4 KiB** 做魔数/头部特征匹配 | P0 | 文件前 4 KiB | 命中/未命中 | 读取失败 → 跳过 + DEBUG（不中断扫描） | **只读不缓存、不落盘、不打印内容**；读到的字节用完即弃 |
-| F-203 | 检测模式 C（显式授权标记）：`<USB>\.usbguard-allow` 内容为已配置**公钥指纹**时判定为授权 | P0 | 标记文件 | 授权 true/false | 文件缺失 → 走 A/B 判定 | 用**公钥**校验，全程不接触私钥材料 |
+| F-203 | 检测模式 C（显式授权标记）：`<USB>\.usbbackup-allow` 内容为已配置**公钥指纹**时判定为授权 | P0 | 标记文件 | 授权 true/false | 文件缺失 → 走 A/B 判定 | 用**公钥**校验，全程不接触私钥材料 |
 | F-204 | 扫描边界：最大深度 4 层、最多 5000 个文件、总耗时上限 20s | P0 | 扫描参数 | 有界结果 | 达上限即停止并 WARN | 有界扫描，防恶意深目录/海量文件拖垮系统 |
 | F-205 | 排除系统目录：`System Volume Information`、`$RECYCLE.BIN`、`found.000` 等 | P0 | 目录项 | 跳过项 | — | 避免误判与权限错误 |
 | F-206 | 重解析点（符号链接/联接点）不跟随 | P0 | 目录项 | 跳过该项 | — | 防递归循环与越界读取 |
@@ -86,7 +86,7 @@ USB 插入事件监控、私钥存在性检测、授权分支（本地备份回�
 | F-405 | 重解析点不跟随；`.lnk`/junction 视为普通文件复制 | P0 | 目录项 | 复制/跳过 | — | 防目录穿越与循环 |
 | F-406 | 复制源守卫：若备份文件夹位于该 U 盘内 → 拒绝执行 | P0 | 源/目标路径 | 接受/拒绝 | 命中 → ERROR 放弃作业 | 防自复制套娃 |
 | F-407 | 复制后校验（可选，默认开）：逐文件比对大小；`--hash` 时比对 SHA-256 | P1 | 源/目标 | 校验结论 | 不一致 → ERROR + 审计记录 | 只比较哈希值 |
-| F-408 | 清单文件 `<USB>:\backup\.usbguard-manifest.json`（可选）：时间、文件数、字节数、工具版本、**公钥指纹** | P2 | 作业结果 | JSON 文件 | 写失败 → WARN | **清单不含私钥、不含文件内容** |
+| F-408 | 清单文件 `<USB>:\backup\.usbbackup-manifest.json`（可选）：时间、文件数、字节数、工具版本、**公钥指纹** | P2 | 作业结果 | JSON 文件 | 写失败 → WARN | **清单不含私钥、不含文件内容** |
 | F-409 | `--dry-run`：只打印将执行的动作，不做任何写入 | P1 | 参数 | 文本 | — | 首次使用建议先 dry-run |
 | F-410 | 回写统计：文件数 / 字节 / 新增 / 跳过 / 失败 | P1 | 过程 | 统计 | — | — |
 
@@ -126,7 +126,7 @@ USB 插入事件监控、私钥存在性检测、授权分支（本地备份回�
 
 | 编号 | 功能点 | 优先级 | 输入 | 输出 | 异常处理 | 安全注意事项 |
 |---|---|---|---|---|---|---|
-| F-701 | 生成密钥对：RSA 默认 4096（`--bits` 下限 2048） | P0 | 参数 | `usbguard.key.pem`（PKCS#8）+ `usbguard.pub.pem`（PKIX） | 目标存在且无 `--force` → 拒绝覆盖 | 生成后立即收紧 ACL：仅当前用户可读 |
+| F-701 | 生成密钥对：RSA 默认 4096（`--bits` 下限 2048） | P0 | 参数 | `usbbackup.key.pem`（PKCS#8）+ `usbbackup.pub.pem`（PKIX） | 目标存在且无 `--force` → 拒绝覆盖 | 生成后立即收紧 ACL：仅当前用户可读 |
 | F-702 | 私钥口令保护（可选 `--pass`）：PBKDF2-HMAC-SHA256（标准库 `crypto/pbkdf2`，60 万次）→ AES-256-GCM 封装 PKCS#8 → `ENCRYPTED PRIVATE KEY` | P1 | 口令 | 加密私钥 PEM | 口令空/过短（<8）→ 拒绝 | 私钥不加密落盘时给出显著 WARN |
 | F-703 | 选择已有公钥（`use`）：校验为公钥后写入 `config.json` | P0 | 公钥 PEM 路径 | 配置更新 | 误传私钥 → 检测并拒绝；非 PEM → 拒绝 | **只接受公钥；私钥不进配置** |
 | F-704 | 公钥指纹（SHA-256，分组长十六进制）+ `inspect` 展示 | P1 | 公钥 | 指纹字符串 | 解析失败 → 报错 | 指纹可安全外显；私钥内容永不外显 |
@@ -187,7 +187,7 @@ USB 插入事件监控、私钥存在性检测、授权分支（本地备份回�
 | F-C01 | 分级日志 DEBUG/INFO/WARN/ERROR（`log/slog`），级别可配置（`--log-level` / 环境变量） | P0 | 级别 | 控制台 + 文件 | 文件不可写 → 仅控制台 + WARN | 日志永不打印私钥/会话密钥/口令 |
 | F-C02 | 日志轮转：按大小（默认 10 MiB × 5 份），标准库自实现 | P1 | 阈值 | 轮转文件 | 轮转失败 → 追加写不中断 | — |
 | F-C03 | 配置 `config.json`：阈值、备份源目录、输出目录、公钥路径、检测模式与特征表、去重开关、保留份数、日志、超时、轮询间隔 | P0 | 文件 | 运行参数 | 缺失 → 内置默认；格式错误 → 明确报错退出 | **配置不含私钥** |
-| F-C04 | 覆盖优先级：命令行 flag > 环境变量（`USBGUARD_*`）> `config.json` > 内置默认 | P1 | 多层 | 生效配置 | 冲突 → 高优先级生效 + DEBUG 记录来源 | — |
+| F-C04 | 覆盖优先级：命令行 flag > 环境变量（`USBBACKUP_*`）> `config.json` > 内置默认 | P1 | 多层 | 生效配置 | 冲突 → 高优先级生效 + DEBUG 记录来源 | — |
 | F-C05 | 配置自检 `config-check`：校验源目录存在、公钥可解析、输出目录可写 | P1 | 配置 | 检查报告 | 任一失败 → 非零退出 | — |
 
 ### 1.13 服务化与部署
@@ -196,7 +196,7 @@ USB 插入事件监控、私钥存在性检测、授权分支（本地备份回�
 |---|---|---|---|---|---|---|
 | F-D01 | 子命令 `run`（前台控制台）/ `once --drive X:`（单次执行，用于验证） | P0 | 参数 | 运行 | 参数非法 → 用法提示 | — |
 | F-D02 | 服务注册：`install-service` / `uninstall-service` / `start` / `stop`，基于 `sc` 语义（`golang.org/x/sys/windows/svc` 不用，改用 `sc.exe` 调用或纯 stdlib 服务控制） | P2 | 参数 | 服务状态 | 需管理员权限 → 明确提示 | **仅用户显式命令触发**，不静默自启动 |
-| F-D03 | 构建产物：`usbguard.exe` / `usbkeygen.exe` / `usbcomp.exe` / `usbunseal.exe`（`-H windowsgui` 仅用于后台主程序） | P0 | 构建 | exe | — | 版本信息内置，`version` 可查 |
+| F-D03 | 构建产物：`usbbackup.exe` / `usbkeygen.exe` / `usbcomp.exe` / `usbunseal.exe`（`-H windowsgui` 仅用于后台主程序） | P0 | 构建 | exe | — | 版本信息内置，`version` 可查 |
 | F-D04 | 构建脚本 `build.ps1` / `build.sh`：注入版本号与构建时间（`-ldflags`），可选 UPX（**默认不启用**） | P1 | 版本 | exe | 构建失败 → 非零退出 | 不做任何加壳/免杀处理 |
 
 ---
@@ -239,7 +239,7 @@ USB 插入事件监控、私钥存在性检测、授权分支（本地备份回�
 
 | 编号 | 决策 | 理由 | 备选与否决原因 |
 |---|---|---|---|
-| D-01 | 事件监控用消息专用窗口 + `WM_DEVICECHANGE`（`RegisterDeviceNotificationW`），轮询兜底 | 事件驱动零轮询开销；兜底保证受限环境下可用 | 纯轮询：不"实时"；WMI 事件订阅：需 COM，复杂易挂 |
+| D-01 | 事件监控用**隐藏的顶层窗口**接收 `WM_DEVICECHANGE`（`WS_POPUP`，不设 `WS_VISIBLE`），轮询兜底 | 卷到达/移除事件由系统**默认广播**给所有顶层窗口，一个隐藏顶层窗口即可收到，空闲态零轮询 | **原方案已否决**：改用消息专用窗口 `HWND_MESSAGE` + `RegisterDeviceNotificationW` 注册卷过滤器。实机验证暴露两处错误——① 消息专用窗口**不在广播范围内**，收不到 `WM_DEVICECHANGE`；② `DBT_DEVTYP_VOLUME` 根本不是 `RegisterDeviceNotification` 支持的过滤器类型（只支持 DEVICEINTERFACE / HANDLE 等），调用会直接返回 `ERROR_INVALID_DATA(13)`。纯轮询：不"实时"；WMI 事件订阅：需 COM，复杂易挂 |
 | D-02 | 容量阈值默认按 **GiB**（10×1024³） | 与 Windows 原生显示口径一致 | 十进制 GB 差 7.4%，会放行/拦截边界盘 |
 | D-03 | 分支 B **明文 zip 默认不落盘**，流式直送加密器，最终产物 `{卷标}.zip.usbk` | 需求要求"zip 必须混合加密"，留明文 zip 等于加密失效；同时省一次全量磁盘写。**可通过 `--keep-plain-zip` 显式恢复旧行为** | 先落 zip 再加密：残留明文 + 双倍 IO。（待用户确认，见 Q-02） |
 | D-04 | 非对称层默认 RSA-4096-OAEP(SHA-256) | 标准库原生、零依赖、PEM 互操作好；每次备份非对称操作仅 1 次，性能无关 | X25519+HKDF 更现代但密钥分发习惯不同；容器头已留算法号（F-603 可后加） |
@@ -249,6 +249,8 @@ USB 插入事件监控、私钥存在性检测、授权分支（本地备份回�
 | D-08 | 树指纹去重 + 同卷保留最近 N 份 | 防反复插拔同一盘造成无限累积 | 无去重：产物无限增长 |
 | D-09 | 口令 KDF 用标准库 `crypto/pbkdf2`（60 万次），不用 Argon2id | 保住 N-104 零依赖硬约束 | Argon2id 抗 GPU 更强，但需 `x/crypto`，破坏零依赖；记为后续可选项 |
 | D-10 | 服务注册仅由显式命令触发，不做静默自启动 | 符合 G-07 无隐蔽能力 | 静默自启触碰持久化红线，否决 |
+| D-11 | 服务模式下**跳过 `I AGREE` 交互确认**（静默进入） | SCM 启动的进程没有控制台，读确认会得到 EOF 并立刻退出，SCM 侧表现为 1053「服务没有及时响应启动或控制请求」。用户显式执行 `install-service` 即为授权行为 | 在服务里打印横幅：无控制台，无意义；要求配置 `--yes`：与 `run` 直接启动不一致，易踩坑 |
+| D-12 | 服务（LocalSystem）与交互运行时使用**相同的路径模板**，但解析结果不同 | 这是 Windows 的既有行为，不是缺陷：LocalSystem 下 `%LOCALAPPDATA%` = `C:\Windows\System32\config\systemprofile\AppData\Local`。因此服务部署**必须**在 `config.json` 中写绝对路径（或改用 `%ProgramData%`） | 自动改写路径：会让配置文件与运行结果不一致，反而更难排查 |
 
 ---
 
@@ -258,7 +260,7 @@ USB 插入事件监控、私钥存在性检测、授权分支（本地备份回�
 |---|---|---|---|
 | Q-01 | "10GB" 是 **GiB** 还是十进制 GB | GiB（10×1024³） | 边界盘（约 10.0–10.7 GB 占用）放行/拦截行为 |
 | Q-02 | 分支 B 是否保留明文 zip | **不保留**，只留 `.usbk` | 忘私钥即不可恢复；保留则削弱加密意义 |
-| Q-03 | 备份源目录（回写分支的本地「备份文件夹」）默认路径 | `%USERPROFILE%\usbguard-backup`（需你指定） | 分支 A 的实际数据来源 |
+| Q-03 | 备份源目录（回写分支的本地「备份文件夹」）默认路径 | `%USERPROFILE%\usbbackup\local-backup` | 分支 A 的实际数据来源 |
 | Q-04 | 是否需要 Windows 服务化（F-D02） | 提供，但仅手动触发 | 开机自启方式与权限模型 |
 | Q-05 | 同卷保留份数 N | 5 | 磁盘占用 |
 | Q-06 | SD 读卡器等其它 `DRIVE_REMOVABLE` 介质是否同样处理 | 是 | 处理范围 |
@@ -283,7 +285,7 @@ USB 插入事件监控、私钥存在性检测、授权分支（本地备份回�
 | 1.10 压缩器 | `cmd/usbcomp` | `main.go` |
 | 1.11 解压器 | `cmd/usbunseal` | `main.go`, `unzip.go` |
 | 1.12 日志配置 | `internal/logx`, `internal/config` | `logx.go`, `rotate.go`, `config.go` |
-| 1.13 服务化 | `cmd/usbguard` | `main.go`, `service_windows.go` |
+| 1.13 服务化 | `cmd/usbbackup` | `main.go`, `service_windows.go` |
 | 公共 | `internal/fsutil` | `fsutil.go`, `longpath.go`, `reparse.go` |
 
 ---
@@ -292,9 +294,37 @@ USB 插入事件监控、私钥存在性检测、授权分支（本地备份回�
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| M0 | 需求表 + 开发环境 + 骨架 + 文档三件套 + Git | 本次交付 |
-| M1 | `internal/crypto` + `internal/keystore` + 单测（最高风险件先做） | 待协作 |
-| M2 | `internal/archive` + `internal/copier` + 单测（守卫逻辑） | 待协作 |
-| M3 | `internal/winvol` + `internal/keyfile` + 单测 | 待协作 |
-| M4 | `internal/winmon` + `internal/backup` 流水线 | 待协作 |
-| M5 | 4 个 CLI + 集成测试 + Windows 实机验证 + 构建脚本 | 待协作 |
+| M0 | 需求表 + 开发环境 + 骨架 + 文档三件套 + Git | ✅ 完成 |
+| M1 | `internal/crypto` + `internal/keystore` + 单测（最高风险件先做） | ✅ 完成（含单测） |
+| M2 | `internal/archive` 打包/解包执行器 + `internal/copier` 复制执行器 + 单测 | ✅ 完成（含单测） |
+| M3 | `internal/winvol` + `internal/keyfile` + 单测 | ✅ 完成（含单测） |
+| M4 | `internal/winmon` + `internal/backup` 流水线 + `internal/winsvc` 服务化 | ✅ 完成（含单测） |
+| M5 | 4 个 CLI + Windows 实机验证 + 构建脚本 | ✅ 完成 |
+
+### 7.1 实机验证记录（2026-09-13）
+
+全部通过真实二进制执行，非仅单测：
+
+| 场景 | 结果 |
+|---|---|
+| 容量门控：已占用 193 GiB > 阈值 10 GiB | 正确跳过，审计记录 `branch=skipped`、`skip_reason=used-over-threshold` |
+| 分支 B：提高阈值后整盘打包加密 | 生成 `VOL_X.zip.usbk`；`unseal` 解出后与原始目录 **逐字节一致** |
+| 分支 A：介质含 `id_rsa` | 识别为已授权，回写 3 个文件到 `\backup\`，源目录零改动，清单已生成 |
+| 常驻 `run`（事件通道 + 模拟到达） | 两个分支均正确执行，作业队列串行化生效 |
+| 单实例互斥 | 第二个实例被拒，退出码 4 |
+| Zip Slip | 真实构造含 `../`、绝对路径条目的容器 → 2 个条目被阻断，无文件逃出目标目录，退出码 5 |
+| 错误私钥 / 篡改 / 截断 | 全部被拒绝 |
+| Windows 服务 | install → start（STATE 4 RUNNING，进程在 Services 会话）→ stop → uninstall 全链路通过，卸载后无残留 |
+
+### 7.2 由"跑一遍"发现并修复的缺陷（单测无法覆盖）
+
+| # | 缺陷 | 后果 |
+|---|---|---|
+| 1 | `fsutil.IsSubPath` 对卷根重复追加分隔符（`E:\` → `E:\\`） | 所有子路径判定恒为假，源守卫与自复制守卫**双双失效** |
+| 2 | `winvol.Query` 对非可移动卷提前返回 | 容量/就绪全为 0，诊断输出无用 |
+| 3 | `flag` 包遇位置参数即停止解析 | `usbkeygen use <路径> --config x`、`usbcomp pack <目录> -o out` 全部失效 |
+| 4 | 容器头把算法方案标为固定 `RSA-4096` | 与实际 2048 位密钥不符，误导运维 |
+| 5 | `DEV_BROADCAST_VOLUME.dbcv_size` 用 `unsafe.Sizeof` 填充（Go 结构体对齐补到 20，C 结构为 18） | `RegisterDeviceNotificationW` 返回 `ERROR_INVALID_DATA(13)`，事件通道完全不可用 |
+| 6 | 服务模式仍要求 `I AGREE` 交互确认 | SCM 拉起进程立即退出，报 1053「服务没有及时响应启动或控制请求」 |
+| 7 | 直接把 `sc.exe` 输出转述给用户 | 中文系统下 sc.exe 输出 GBK，按 UTF-8 解码成乱码；改为翻译退出码 + 只取 ASCII 行 |
+

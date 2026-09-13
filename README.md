@@ -1,4 +1,4 @@
-# usbguard
+# usbbackup
 
 **Windows 专用 USB 自动备份与加密工具** —— 无 UI、无 HID 依赖、纯 Go 标准库实现。
 
@@ -10,7 +10,7 @@
 
 ## 1. 它做什么
 
-插入 U 盘后，`usbguard` 自动判断该介质属于哪一类，并执行对应动作：
+插入 U 盘后，`usbbackup` 自动判断该介质属于哪一类，并执行对应动作：
 
 ```
                     ┌──────────────────────────┐
@@ -101,20 +101,20 @@
 
 ### 3.1 直接使用预编译产物
 
-把 `dist\` 下的 4 个 exe 放到任意目录（建议 `C:\Program Files\usbguard\`），然后：
+把 `dist\` 下的 4 个 exe 放到任意目录（建议 `C:\Program Files\usbbackup\`），然后：
 
 ```powershell
 # 生成密钥对（首次使用）
-.\usbkeygen.exe generate --out C:\ProgramData\usbguard\keys
+.\usbkeygen.exe generate --out C:\ProgramData\usbbackup\keys
 
 # 登记公钥（配置只保存公钥，不保存私钥）
-.\usbkeygen.exe use C:\ProgramData\usbguard\keys\usbguard.pub.pem
+.\usbkeygen.exe use C:\ProgramData\usbbackup\keys\usbbackup.pub.pem
 
 # 校验配置与环境
-.\usbguard.exe config-check
+.\usbbackup.exe config-check
 
 # 只读诊断：看看某个盘符会被怎么处理（不写任何数据）
-.\usbguard.exe probe --drive E:
+.\usbbackup.exe probe --drive E:
 ```
 
 ### 3.2 从源码构建
@@ -122,7 +122,7 @@
 需要 **Go 1.24 或更高版本**（开发环境实测 Go 1.27.1）。零第三方依赖，可离线构建。
 
 ```powershell
-cd D:\path\to\usbguard
+cd D:\path\to\usbbackup
 .\build.ps1 -Version 0.1.0 -Test
 ```
 
@@ -130,9 +130,9 @@ cd D:\path\to\usbguard
 
 ```bash
 # Linux (含 WSL / Git Bash) 交叉编译 Windows 产物
-cd /d/Users/flowe/WorkBuddy/渗透/usbguard
+cd /d/Users/flowe/WorkBuddy/渗透/usbbackup
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
-  go build -trimpath -o dist/ github.com/immml/UsbBackUP/cmd/usbguard github.com/immml/UsbBackUP/cmd/usbkeygen github.com/immml/UsbBackUP/cmd/usbcomp github.com/immml/UsbBackUP/cmd/usbunseal
+  go build -trimpath -o dist/ github.com/immml/UsbBackUP/cmd/usbbackup github.com/immml/UsbBackUP/cmd/usbkeygen github.com/immml/UsbBackUP/cmd/usbcomp github.com/immml/UsbBackUP/cmd/usbunseal
 ```
 
 目标平台：Windows 10 1809+ / Windows 11 / Windows Server 2019+，**amd64**。
@@ -155,19 +155,51 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
 
 自动化场景可加 `--yes` 跳过 `I AGREE` 交互。
 
-### 4.2 主程序 `usbguard`
+### 4.2 主程序 `usbbackup`
 
-| 子命令 | 说明 | 状态 |
-|---|---|---|
-| `run` | 前台常驻运行（事件驱动 + 轮询兜底） | 计划 M4 |
-| `once --drive E:` | 单盘执行一次作业 | 计划 M4 |
-| `list` | 列出可移动卷及其容量 | ✅ 可用 |
-| `probe --drive E:` | 只读诊断：卷信息 + 私钥检测结论 + 将走哪个分支 | ✅ 可用 |
-| `config-check` | 校验配置与环境（源目录、输出目录可写、公钥、审计目录） | ✅ 可用 |
-| `version` | 版本信息 | ✅ 可用 |
+| 子命令 | 说明 |
+|---|---|
+| `run` | 前台常驻运行（事件驱动 + 轮询兜底），Ctrl+C 退出 |
+| `once --drive E:` | 对单个盘符执行一次作业（验证与排障用） |
+| `list [--all]` | 列出可移动卷及其容量 |
+| `probe --drive E:` | 只读诊断：卷信息 + 私钥检测结论 + 将走哪个分支（**不写任何数据**） |
+| `config-check` | 校验配置与运行环境（源目录、输出目录可写、公钥、审计目录、源守卫） |
+| `install-service` / `uninstall-service` | 注册 / 删除 Windows 服务（需管理员） |
+| `start` / `stop` / `status` | 控制已注册的服务 |
+| `version` | 版本信息 |
 
-> 建议：第一次在任何机器上运行前，先 `usbguard probe --drive <盘符>` 确认判定结果符合预期。
-> 该命令**只读**，不会写入任何数据。
+`run` / `once` 选项：
+
+| 选项 | 说明 |
+|---|---|
+| `--dry-run` | 只做检测与门控判定，不写入任何数据 |
+| `--poll-only` | 强制仅用轮询通道（排障用；默认事件驱动） |
+| `--allow-fixed` | 允许对固定磁盘执行作业。**仅供验证与排障**，生产不要开启 |
+| `--overwrite` | 回写时覆盖目标同名文件（默认跳过） |
+| `--verify-hash` | 回写后按 SHA-256 逐文件校验 |
+| `--service` | 以 Windows 服务方式运行（由 SCM 调用，勿手工执行） |
+| `--simulate-arrival E:` | 注入一次模拟的"卷到达"事件，用于在没有物理介质时验证完整链路 |
+
+> 建议：第一次在任何机器上运行前，先 `usbbackup probe --drive <盘符>` 确认判定结果符合预期。
+> 该命令**只读**，不写任何数据。本机没有可移动介质时，可用
+> `usbbackup once --drive C: --allow-fixed --dry-run` 验证判定与门控逻辑。
+
+### 4.2.1 注册为 Windows 服务（需管理员）
+
+```powershell
+cd D:\path\to\usbbackup
+.\usbbackup.exe install-service
+.\usbbackup.exe start
+.\usbbackup.exe status
+```
+
+服务启动类型为**手动**（不会自动开机启动）。要开机自启请显式执行
+`sc.exe config usbbackup start= auto` —— 本工具刻意不代劳（见 `REQUIREMENTS.md` G-07）。
+
+> **部署注意（实测发现）**：服务以 `LocalSystem` 运行，此时 `%LOCALAPPDATA%` 解析为
+> `C:\Windows\System32\config\systemprofile\AppData\Local`，而不是当前用户的目录。
+> 因此服务部署**必须**在 `config.json` 里写**绝对路径**（配置、密钥、输出目录、日志），
+> 或把 `--config` 指向绝对路径的配置文件。否则会出现"日志不知道去哪了"。
 
 ### 4.3 压缩器 `usbcomp`
 
@@ -175,7 +207,8 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
 .\usbcomp.exe pack D:\重要资料 -o D:\out\mybackup.usbk
 ```
 
-`--store` 全部不压缩、`--exclude` 追加排除项、`--threads` 并发度、`--keep-plain-zip` 额外保留明文 zip。
+`--store` 全部不压缩、`--exclude <模式>` 追加排除项（可重复）、`--threads` 并发度提示、
+`--keep-plain-zip` 额外保留明文 zip、`--quiet` 不输出进度。
 源目录 → 流式 zip → 混合加密 → 单一 `.usbk`。源目录全程只读。
 
 ### 4.4 解压器 `usbunseal`
@@ -185,30 +218,32 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
 .\usbunseal.exe list D:\out\mybackup.usbk
 
 # 校验完整性（不解出明文）
-.\usbunseal.exe verify D:\out\mybackup.usbk --key .\usbguard.key.pem --pass
+.\usbunseal.exe verify D:\out\mybackup.usbk --key .\usbbackup.key.pem --pass
 
 # 解密并解压到指定目录
-.\usbunseal.exe unseal D:\out\mybackup.usbk -d D:\restore --key .\usbguard.key.pem
+.\usbunseal.exe unseal D:\out\mybackup.usbk -d D:\restore --key .\usbbackup.key.pem
 ```
 
+`--dry-run` 只校验条目不写入、`--force` 覆盖已存在文件、`--keep-zip` 只解出明文 zip。
+
 安全设计：目标目录必须显式指定；默认不覆盖已存在文件；拒绝一切可能逃逸目标目录的条目名（Zip Slip 防护）；
-解密失败时统一报错，不区分「密钥错误」与「数据被篡改」。
+对"解压炸弹"设有单条目与总量双上限；解密失败时统一报错，不区分「密钥错误」与「数据被篡改」。
 
 ---
 
 ## 5. 配置
 
-配置文件默认位于 `%LOCALAPPDATA%\usbguard\config.json`，也可用 `--config` 指定。
+配置文件默认位于 `%LOCALAPPDATA%\usbbackup\config.json`，也可用 `--config` 指定。
 
-优先级：**命令行 flag > 环境变量 `USBGUARD_*` > `config.json` > 内置默认值**。
+优先级：**命令行 flag > 环境变量 `USBBACKUP_*` > `config.json` > 内置默认值**。
 
 ```json
 {
-  "backup_source_dir": "%USERPROFILE%\\usbguard-backup",
+  "backup_source_dir": "%USERPROFILE%\\usbbackup-source",
   "output_dir": "%TEMP%\\backup",
-  "public_key_path": "C:\\ProgramData\\usbguard\\keys\\usbguard.pub.pem",
+  "public_key_path": "C:\\ProgramData\\usbbackup\\keys\\usbbackup.pub.pem",
   "authorized_backup_subdir": "backup",
-  "audit_file": "%LOCALAPPDATA%\\usbguard\\audit.jsonl",
+  "audit_file": "%LOCALAPPDATA%\\usbbackup\\audit.jsonl",
   "monitor": {
     "poll_interval_sec": 5,
     "debounce_sec": 5,
@@ -223,7 +258,7 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
     "max_files": 5000,
     "max_headers_bytes": 4096,
     "timeout_sec": 20,
-    "marker_file": ".usbguard-allow",
+    "marker_file": ".usbbackup-allow",
     "scan_contents": true,
     "extra_name_patterns": [],
     "extra_content_markers": []
@@ -244,15 +279,15 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
 }
 ```
 
-支持的 `USBGUARD_*` 环境变量：
-`USBGUARD_BACKUP_SOURCE_DIR`、`USBGUARD_OUTPUT_DIR`、`USBGUARD_PUBLIC_KEY`、`USBGUARD_LOG_LEVEL`、
-`USBGUARD_AUDIT_FILE`、`USBGUARD_USED_THRESHOLD_BYTES`、`USBGUARD_POLL_INTERVAL_SEC`。
+支持的 `USBBACKUP_*` 环境变量：
+`USBBACKUP_BACKUP_SOURCE_DIR`、`USBBACKUP_OUTPUT_DIR`、`USBBACKUP_PUBLIC_KEY`、`USBBACKUP_LOG_LEVEL`、
+`USBBACKUP_AUDIT_FILE`、`USBBACKUP_USED_THRESHOLD_BYTES`、`USBBACKUP_POLL_INTERVAL_SEC`。
 
 路径支持 `%VAR%` 与 `${VAR}` 展开。配置优先级冲突时高优先级生效，并以 DEBUG 级记录来源。
 
 ### 授权标记（可选，比启发式更确定）
 
-在 U 盘根目录放一个 `.usbguard-allow`，内容为已登记公钥的指纹：
+在 U 盘根目录放一个 `.usbbackup-allow`，内容为已登记公钥的指纹：
 
 ```
 fingerprint=1a2b 3c4d 5e6f ...
@@ -297,9 +332,9 @@ fingerprint=1a2b 3c4d 5e6f ...
 ## 7. 项目结构
 
 ```
-usbguard/
+usbbackup/
 ├── cmd/
-│   ├── usbguard/        常驻主程序（监控 / 编排 / 诊断）
+│   ├── usbbackup/        常驻主程序（监控 / 编排 / 诊断）
 │   ├── usbkeygen/       生成器（密钥对生成 + 公钥选择）
 │   ├── usbcomp/         压缩器（带混合加密）
 │   └── usbunseal/       解压器（解密 + 解压）
@@ -331,12 +366,45 @@ usbguard/
 |---|---|---|
 | M0 | 需求表 + 开发环境 + 骨架 + 文档三件套 + Git | ✅ 完成 |
 | M1 | `crypto` 混合加密容器 + `keystore` 密钥管理 | ✅ 完成（含单测） |
-| M2 | `archive` 流式打包 / 安全解包执行器 + `copier` 复制执行器 | 待开发 |
-| M3 | `winvol` 卷信息与门控 ✅；`keyfile` 检测 ✅ | ✅ 完成（含单测） |
-| M4 | `winmon` 设备监控 + `backup` 流水线 + 服务化 | 待开发 |
-| M5 | 4 个 CLI 集成测试 + Windows 实机验证 | 部分完成（框架就绪） |
+| M2 | `archive` 流式打包 / 安全解包执行器 + `copier` 复制执行器 | ✅ 完成（含单测） |
+| M3 | `winvol` 卷信息与门控 + `keyfile` 私钥存在性检测 | ✅ 完成（含单测） |
+| M4 | `winmon` 设备监控 + `backup` 流水线 + `winsvc` 服务化 | ✅ 完成（含单测） |
+| M5 | 4 个 CLI + 构建脚本 + Windows 实机验证 | ✅ 完成 |
 
-当前已实现的模块都有单元测试覆盖，`go vet ./...` 与 `go test ./...` 全绿。
+全部模块均有单元测试覆盖，`go vet ./...` 与 `go test ./...` 全绿。
+
+### 8.1 实机验证记录
+
+以下场景均以**真实二进制**跑通（不只是单测）：
+
+| 场景 | 结果 |
+|---|---|
+| 容量门控：已占用 193 GiB > 阈值 10 GiB | 正确跳过，审计记录 `branch=skipped` / `skip_reason=used-over-threshold` |
+| 分支 B：整盘打包 + 混合加密 | 生成 `VOL_X.zip.usbk`；`unseal` 解出后与原始目录**逐字节一致** |
+| 分支 A：介质含 `id_rsa` | 识别为已授权，回写 3 个文件到 `\backup\`，源目录零改动，清单已生成 |
+| 常驻 `run`（事件通道 + 模拟到达） | 两个分支均正确执行，作业队列串行化生效 |
+| 单实例互斥 | 第二个实例被拒，退出码 4 |
+| Zip Slip | 真实构造含 `../` 与绝对路径条目的容器 → 2 个条目被阻断，无文件逃出目标目录，退出码 5 |
+| 错误私钥 / 篡改 / 截断 | 全部被拒绝 |
+| Windows 服务 | install → start（STATE 4 RUNNING）→ stop → uninstall 全链路通过，卸载后无残留 |
+
+### 8.2 由"跑一遍"发现并修复的缺陷
+
+这些缺陷**单测无法发现**，全部是实际运行才暴露的：
+
+| # | 缺陷 | 后果 |
+|---|---|---|
+| 1 | `fsutil.IsSubPath` 对卷根重复追加分隔符（`E:\` → `E:\\`） | 子路径判定恒为假，源守卫与自复制守卫**双双失效** |
+| 2 | `winvol.Query` 对非可移动卷提前返回 | 容量/就绪全为 0，诊断输出无用 |
+| 3 | Go `flag` 包遇位置参数即停止解析 | `usbkeygen use <路径> --config x`、`usbcomp pack <目录> -o out` 全部失效 |
+| 4 | 容器头把算法方案标为固定 `RSA-4096` | 与实际 2048 位密钥不符，误导运维 |
+| 5 | `DEV_BROADCAST_VOLUME.dbcv_size` 用 `unsafe.Sizeof` 填充 | Go 结构体对齐补到 20 字节（C 结构为 18），`RegisterDeviceNotificationW` 返回 `ERROR_INVALID_DATA`，事件通道完全不可用 |
+| 6 | 服务模式仍要求 `I AGREE` 交互确认 | SCM 拉起进程立即退出，报 1053「服务没有及时响应启动或控制请求」 |
+| 7 | 直接转述 `sc.exe` 输出 | 中文系统下 sc.exe 输出 GBK，按 UTF-8 解码成乱码；改为翻译退出码 + 只取 ASCII 行 |
+
+另外修正了一处**设计假设错误**：卷到达事件不能通过消息专用窗口 +
+`RegisterDeviceNotificationW` 获取（消息专用窗口不在广播范围，且 `DBT_DEVTYP_VOLUME`
+不是合法过滤器类型），已改为隐藏的顶层窗口接收默认广播。详见 `REQUIREMENTS.md` D-01。
 
 ---
 

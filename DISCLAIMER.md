@@ -1,6 +1,6 @@
 # 免责声明 / DISCLAIMER
 
-**项目**：`usbguard` —— Windows 专用 USB 自动备份与加密工具
+**项目**：`usbbackup` —— Windows 专用 USB 自动备份与加密工具
 **文档版本**：v1.0 · 2026-09-13
 **许可协议**：CC BY-NC-SA 4.0（详见 `LICENSE`）
 
