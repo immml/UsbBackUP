@@ -1,6 +1,6 @@
 // Package backup 是流水线编排层，把各模块串成一条作业链。
 //
-// 状态：产物命名与审计落盘**已实现并测试**；完整流水线执行器计划于 M4。
+// 状态：**已完整实现**（产物命名与审计见本文件，流水线见 pipeline.go，保留策略见 retention.go）。
 //
 // 对应需求 F-801 ~ F-809。
 //
@@ -17,7 +17,6 @@
 package backup
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,14 +26,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/immml/UsbBackUP/internal/archive"
 	"github.com/immml/UsbBackUP/internal/config"
+	"github.com/immml/UsbBackUP/internal/copier"
+	"github.com/immml/UsbBackUP/internal/crypto"
 	"github.com/immml/UsbBackUP/internal/fsutil"
 	"github.com/immml/UsbBackUP/internal/keyfile"
 	"github.com/immml/UsbBackUP/internal/winvol"
 )
-
-// ErrNotImplemented 表示该能力尚未实现。
-var ErrNotImplemented = errors.New("backup: 流水线执行器尚未实现（计划于 M4）")
 
 // Branch 是作业走的分支。
 type Branch string
@@ -67,10 +66,21 @@ const (
 type Deps struct {
 	Cfg *config.Config
 	Log *slog.Logger
-	// Matcher 是私钥判定器（由 keyfile.NewMatcher 构造）。
+	// Matcher 是私钥判定器（由 keyfile.NewMatcher 构造）。为 nil 时按"未授权"处理。
 	Matcher *keyfile.Matcher
-	// AllowedFingerprint 是已配置公钥的指纹，用于显式授权标记判定。
+	// AllowedFingerprint 是已配置公钥的指纹，用于显式授权标记判定（F-203）。
 	AllowedFingerprint string
+	// AllowFixed 允许对固定磁盘执行作业。
+	// **仅供验证与排障**（本机没有可移动介质时用来跑通链路），生产环境应保持 false。
+	AllowFixed bool
+	// DryRun 只做检测与门控判定，不写入任何数据。
+	DryRun bool
+	// CopyOverwrite 允许回写时覆盖目标同名文件（默认跳过，F-403）。
+	CopyOverwrite bool
+	// CopyVerifyHash 回写后按 SHA-256 逐文件校验（默认只比大小，F-407）。
+	CopyVerifyHash bool
+	// CopyMaxFiles 是回写条目数上限，0 表示用内置默认。
+	CopyMaxFiles int
 }
 
 // AuditRecord 是写入 audit.jsonl 的一行。
@@ -177,26 +187,14 @@ type Result struct {
 	Gate       winvol.Policy
 	// ProductPath 是产物绝对路径（分支 B）。
 	ProductPath string
-	// CopiedStats 是分支 A 的复制统计。
-	CopiedStats any
-	OK          bool
-	Err         string
-	Duration    time.Duration
-}
-
-// Run 执行一次完整的单盘作业（实现计划见 M4）。
-//
-// 实现计划：
-//  1. winvol.Query 等待就绪并取卷信息（失败 → 跳过，不报错）；
-//  2. 卷类型非可移动 → 跳过（F-301）；
-//  3. keyfile.Scan 判定是否持有私钥（F-2xx）；
-//  4. 授权 → copier.Copy 到 `\backup\`（F-401~F-410）；
-//  5. 未授权 → winvol.EvaluateGate 门控（F-304）；
-//  6. 通过门控 → archive.ZipStream 管道直送 crypto.EncryptStream → 落盘
-//     `%TEMP%\backup\{卷标}.zip.usbk`（F-501 / F-601 / F-803 / D-03）；
-//  7. 无论走哪个分支，最后都写一条审计记录（F-807）。
-//
-// 任一分支全过程都只读源盘；失败时清理半成品（F-801）。
-func Run(ctx context.Context, deps Deps, root string) (Result, error) {
-	return Result{Root: root, Branch: BranchFailed, Err: "尚未实现（M4）"}, ErrNotImplemented
+	// Copy 是分支 A 的复制统计。
+	Copy *copier.Stats
+	// Zip 是分支 B 的打包统计。
+	Zip archive.ZipStats
+	// Encrypt 是分支 B 的加密统计。
+	Encrypt crypto.EncryptSummary
+	OK      bool
+	Err     string
+	// Duration 是本次作业耗时。
+	Duration time.Duration
 }

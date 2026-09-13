@@ -88,7 +88,7 @@ func TestAppendAudit(t *testing.T) {
 
 	rec := AuditRecord{
 		Time:         "2026-09-13T18:39:00+08:00",
-		Tool:         "usbguard",
+		Tool:         "usbbackup",
 		ToolVersion:  "0.1.0",
 		Root:         `E:\`,
 		Label:        "MyUSB",
