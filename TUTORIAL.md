@@ -49,11 +49,28 @@
 
 ## 1. 准备
 
-把四个 exe 放在**同一个目录**（`build-client` 默认在这里找 `usbbackup.exe` 模板）：
+### 不想记参数：用交互式向导
+
+```powershell
+.\usbsetup.exe
+```
+
+双击即进入黑窗口，一问一答走完五步（密钥 → 产物目录 → 阈值 → 打包上限 → 输出），
+每步直接回车就采用方括号里的默认值。适合偶尔用一次、或不熟悉参数的情况。
+
+向导与 `build-client` **共用同一套生成逻辑**（`internal/clientgen`），
+产物行为完全一致，不存在"向导版"和"命令行版"的差别。
+
+---
+
+## 1b. 目录准备
+
+把五个 exe 放在**同一个目录**（`build-client` 与向导默认在这里找 `usbbackup.exe` 模板）：
 
 ```
 D:\usbbackup\
-├── usbkeygen.exe    生成器
+├── usbsetup.exe     交互式生成向导（推荐首次使用）
+├── usbkeygen.exe    生成器（命令行）
 ├── usbbackup.exe    主程序（同时是客户端模板）
 ├── usbunseal.exe    解压器
 └── usbcomp.exe      独立压缩器（可选，手工打包用）

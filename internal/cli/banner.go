@@ -235,21 +235,33 @@ func ReorderArgs(fs *flag.FlagSet, args []string) []string {
 // ConfirmAgreement 要求用户输入 I AGREE 才继续（F-902）。
 //
 // 返回 nil 表示已同意；返回 ErrNotAgreed 表示未同意。
+// ConfirmAgreement 读取并校验 I AGREE 确认输入。
+//
+// 若调用方已持有 *bufio.Reader，会直接使用它（见 ConfirmAgreementBuf 的说明）。
 func ConfirmAgreement(r io.Reader, w io.Writer) error {
+	if br, ok := r.(*bufio.Reader); ok {
+		return ConfirmAgreementBuf(br, w)
+	}
+	return ConfirmAgreementBuf(bufio.NewReader(r), w)
+}
+
+// ConfirmAgreementBuf 是给「已经持有 bufio.Reader 的调用方」用的入口。
+//
+// 为什么需要它：bufio 会一次性预读一整块（默认 4 KiB）。若这里再包一层 reader，
+// 后面所有输入都会被留在内层缓冲里，外层的后续提问一个字都读不到——
+// 交互式向导会表现为「每一步都莫名其妙用了默认值」。
+// 因此共用 reader 的场景必须走这个不包装的入口。
+func ConfirmAgreementBuf(r *bufio.Reader, w io.Writer) error {
 	fmt.Fprint(w, "  继续操作前请输入 I AGREE（不区分大小写）表示你已阅读并同意上述条款：\n  > ")
-	sc := bufio.NewScanner(r)
-	if !sc.Scan() {
-		if err := sc.Err(); err != nil {
-			return fmt.Errorf("读取确认输入失败: %w", err)
-		}
+	line, err := r.ReadString('\n')
+	if err != nil && strings.TrimSpace(line) == "" {
 		fmt.Fprintln(w, "\n  未收到输入，已退出。")
 		return ErrNotAgreed
 	}
-	answer := strings.TrimSpace(sc.Text())
 	// 统一空格，容忍 "I  AGREE" 这类多空格写法。
-	normalized := strings.Join(strings.Fields(strings.ToUpper(answer)), " ")
+	normalized := strings.Join(strings.Fields(strings.ToUpper(strings.TrimSpace(line))), " ")
 	if normalized != "I AGREE" {
-		fmt.Fprintf(w, "\n  输入为 %q，未通过确认，已退出。\n", answer)
+		fmt.Fprintf(w, "\n  输入为 %q，未通过确认，已退出。\n", strings.TrimSpace(line))
 		return ErrNotAgreed
 	}
 	fmt.Fprintln(w, "\n  已确认。")

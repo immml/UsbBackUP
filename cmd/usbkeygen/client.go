@@ -1,26 +1,24 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/immml/UsbBackUP/internal/cli"
+	"github.com/immml/UsbBackUP/internal/clientgen"
 	"github.com/immml/UsbBackUP/internal/config"
-	"github.com/immml/UsbBackUP/internal/embedcfg"
 	"github.com/immml/UsbBackUP/internal/keystore"
-	"github.com/immml/UsbBackUP/internal/version"
 )
 
 // cmdBuildClient 产出一个「配置与公钥已内嵌」的客户端可执行文件。
 //
 // 用途：把客户端部署到目标机器上时，不需要再分发 config.json 与公钥文件，
 // 客户端启动即按预设行为运行。内嵌的只有**公钥**，私钥始终留在你自己手里。
+//
+// 若不想记这些参数，可用交互式向导：usbsetup.exe
 func cmdBuildClient(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("build-client", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -41,6 +39,7 @@ func cmdBuildClient(args []string, stdout, stderr io.Writer) int {
 	if strings.TrimSpace(*pub) == "" || strings.TrimSpace(*out) == "" {
 		fmt.Fprintln(stderr, "用法：usbkeygen build-client --public <公钥.pem> -o <client.exe> [--template usbbackup.exe]")
 		fmt.Fprintln(stderr, "      [--config 配置.json] [--output-dir DIR] [--source-dir DIR] [--threshold 10GiB]")
+		fmt.Fprintln(stderr, "提示：不想记参数可用交互式向导 usbsetup.exe")
 		return cli.ExitUsage
 	}
 
@@ -50,151 +49,54 @@ func cmdBuildClient(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "错误：读取公钥失败：%v\n", err)
 		return cli.ExitRuntime
 	}
-	pubKey, err := keystore.ParsePublicKeyPEM(pubRaw)
-	if err != nil {
+	if _, err := keystore.ParsePublicKeyPEM(pubRaw); err != nil {
 		fmt.Fprintf(stderr, "错误：%v\n", err)
 		fmt.Fprintln(stderr, "提示：客户端只能内嵌公钥。私钥请自行离线保管，用于 usbunseal 解密。")
 		return cli.ExitRuntime
 	}
-	fpBytes, fpText, err := keystore.PublicKeyFingerprint(pubKey)
-	if err != nil {
-		fmt.Fprintf(stderr, "错误：计算公钥指纹失败：%v\n", err)
-		return cli.ExitRuntime
-	}
 
-	// 2) 配置：以内置默认打底，再叠加文件与命令行覆盖。
-	cfg := config.Default()
+	// 2) 基础配置。
+	var base *config.Config
 	if strings.TrimSpace(*cfgFile) != "" {
 		loaded, _, err := config.Load(*cfgFile)
 		if err != nil {
 			fmt.Fprintf(stderr, "错误：读取基础配置失败：%v\n", err)
 			return cli.ExitRuntime
 		}
-		cfg = loaded
-	}
-	if strings.TrimSpace(*outDir) != "" {
-		cfg.OutputDir = *outDir
-	}
-	if strings.TrimSpace(*srcDir) != "" {
-		cfg.BackupSourceDir = *srcDir
-	}
-	if strings.TrimSpace(*threshold) != "" {
-		n, err := config.ParseSize(*threshold)
-		if err != nil {
-			fmt.Fprintf(stderr, "错误：--threshold 无法解析：%v\n", err)
-			return cli.ExitUsage
-		}
-		cfg.Gate.UsedThresholdBytes = n
-		cfg.Gate.UsedThreshold = *threshold
-	}
-	if strings.TrimSpace(*maxTotal) != "" {
-		n, err := config.ParseSize(*maxTotal)
-		if err != nil {
-			fmt.Fprintf(stderr, "错误：--max-total 无法解析：%v\n", err)
-			return cli.ExitUsage
-		}
-		cfg.Gate.MaxTotalBytes = n
-	}
-	// 客户端不读取外部配置文件，公钥路径仅作展示用途。
-	cfg.PublicKeyPath = "<内嵌于客户端>"
-	if err := cfg.Validate(); err != nil {
-		fmt.Fprintf(stderr, "错误：配置校验失败：%v\n", err)
-		return cli.ExitRuntime
+		base = loaded
 	}
 
-	cfgJSON, err := json.Marshal(cfg)
+	// 3) 生成（与 usbsetup 向导共用同一份实现）。
+	res, err := clientgen.Build(clientgen.Options{
+		PublicKeyPEM: pubRaw,
+		Template:     *template,
+		Output:       *out,
+		BaseConfig:   base,
+		ClientName:   *name,
+		OutputDir:    *outDir,
+		SourceDir:    *srcDir,
+		Threshold:    *threshold,
+		MaxTotal:     *maxTotal,
+		Force:        *force,
+	})
 	if err != nil {
-		fmt.Fprintf(stderr, "错误：序列化配置失败：%v\n", err)
-		return cli.ExitRuntime
-	}
-
-	// 3) 模板：默认取与本工具同目录的 usbbackup.exe。
-	tpl := strings.TrimSpace(*template)
-	if tpl == "" {
-		tpl = defaultClientTemplate()
-	}
-	if fi, err := os.Stat(tpl); err != nil {
-		fmt.Fprintf(stderr, "错误：找不到客户端模板 %s：%v\n", tpl, err)
-		fmt.Fprintln(stderr, "提示：把 usbbackup.exe 放在本工具同目录，或用 --template 指定路径。")
-		return cli.ExitRuntime
-	} else if fi.IsDir() {
-		fmt.Fprintf(stderr, "错误：模板 %s 是目录\n", tpl)
-		return cli.ExitUsage
-	}
-
-	outPath, err := filepath.Abs(*out)
-	if err != nil {
-		fmt.Fprintf(stderr, "错误：解析输出路径失败：%v\n", err)
-		return cli.ExitRuntime
-	}
-	if _, err := os.Stat(outPath); err == nil && !*force {
-		fmt.Fprintf(stderr, "错误：%s 已存在（加 --force 覆盖）\n", outPath)
-		return cli.ExitRuntime
-	}
-
-	// 4) 追加内嵌块（含私钥守卫，含校验和）。
-	payload := embedcfg.Payload{
-		ConfigJSON:     cfgJSON,
-		PublicKeyPEM:   string(pubRaw),
-		ClientName:     strings.TrimSpace(*name),
-		BuiltAt:        time.Now().Format(time.RFC3339),
-		BuilderVersion: version.Version,
-	}
-	if err := embedcfg.Append(tpl, outPath, payload); err != nil {
 		fmt.Fprintf(stderr, "错误：生成客户端失败：%v\n", err)
 		return cli.ExitRuntime
 	}
 
-	// 5) 回读自检：确认产物能正确读出同样的公钥指纹。
-	got, err := embedcfg.Read(outPath)
-	if err != nil {
-		fmt.Fprintf(stderr, "错误：客户端自检失败（读回内嵌配置时出错）：%v\n", err)
-		return cli.ExitRuntime
-	}
-	gotPub, err := keystore.ParsePublicKeyPEM([]byte(got.PublicKeyPEM))
-	if err != nil {
-		fmt.Fprintf(stderr, "错误：客户端自检失败（内嵌公钥不可用）：%v\n", err)
-		return cli.ExitRuntime
-	}
-	gotFP, _, err := keystore.PublicKeyFingerprint(gotPub)
-	if err != nil || gotFP != fpBytes {
-		fmt.Fprintln(stderr, "错误：客户端自检失败（回读的公钥指纹与源不一致）")
-		return cli.ExitRuntime
-	}
-
-	// 6) 输出摘要。
 	fmt.Fprintln(stdout, "客户端已生成。")
-	fmt.Fprintf(stdout, "  输出        : %s\n", outPath)
-	if got.ClientName != "" {
-		fmt.Fprintf(stdout, "  客户端标识  : %s\n", got.ClientName)
+	fmt.Fprintf(stdout, "  输出        : %s\n", res.OutputPath)
+	if res.ClientName != "" {
+		fmt.Fprintf(stdout, "  客户端标识  : %s\n", res.ClientName)
 	}
-	fmt.Fprintf(stdout, "  模板        : %s\n", tpl)
-	fmt.Fprintf(stdout, "  内嵌公钥    : %d 位，指纹 %s\n", pubKey.N.BitLen(), fpText)
-	fmt.Fprintf(stdout, "  产物输出目录: %s\n", cfg.OutputDir)
-	fmt.Fprintf(stdout, "  容量门控阈值: %s\n", humanThreshold(cfg))
-	fmt.Fprintf(stdout, "  生成时间    : %s（生成器 %s）\n", got.BuiltAt, got.BuilderVersion)
+	fmt.Fprintf(stdout, "  模板        : %s\n", res.TemplatePath)
+	fmt.Fprintf(stdout, "  内嵌公钥    : %d 位，指纹 %s\n", res.KeyBits, res.Fingerprint)
+	fmt.Fprintf(stdout, "  产物输出目录: %s\n", res.OutputDir)
+	fmt.Fprintf(stdout, "  容量门控阈值: %s\n", res.ThresholdText)
+	fmt.Fprintf(stdout, "  打包体积上限: %s\n", res.MaxTotalText)
+	fmt.Fprintf(stdout, "  生成时间    : %s（生成器 %s）\n", res.BuiltAt, res.BuilderVer)
 	fmt.Fprintln(stdout)
 	fmt.Fprintln(stdout, "  内嵌内容只有配置与公钥；私钥不在其中，也不应随客户端分发。")
 	fmt.Fprintln(stdout, "  客户端运行后产出的 .usbk 只能用对应私钥解密（usbunseal）。")
-
-	// 清掉内存里的公钥副本无实际意义（公钥本就公开），这里只做变量归零的示意。
-	_ = pubRaw
 	return cli.ExitOK
-}
-
-// defaultClientTemplate 返回默认的客户端模板路径：与本工具同目录的 usbbackup.exe。
-func defaultClientTemplate() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return "usbbackup.exe"
-	}
-	return filepath.Join(filepath.Dir(exe), "usbbackup.exe")
-}
-
-// humanThreshold 把阈值显示成人类可读形式。
-func humanThreshold(c *config.Config) string {
-	if s := strings.TrimSpace(c.Gate.UsedThreshold); s != "" {
-		return fmt.Sprintf("%s（%d 字节）", s, c.Gate.UsedThresholdBytes)
-	}
-	return fmt.Sprintf("%d 字节", c.Gate.UsedThresholdBytes)
 }

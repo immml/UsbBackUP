@@ -97,10 +97,11 @@ try {
     $env:CGO_ENABLED = '0'
 
     # usbbackup is a background daemon: use the windowsgui subsystem so it does
-    # not allocate a console window. The other three are interactive tools.
+    # not allocate a console window. The others are interactive console tools.
     $targets = @(
         @{ Name = 'usbbackup';  Pkg = './cmd/usbbackup';  Gui = $true  },
         @{ Name = 'usbkeygen'; Pkg = './cmd/usbkeygen'; Gui = $false },
+        @{ Name = 'usbsetup';  Pkg = './cmd/usbsetup';  Gui = $false },
         @{ Name = 'usbcomp';   Pkg = './cmd/usbcomp';   Gui = $false },
         @{ Name = 'usbunseal'; Pkg = './cmd/usbunseal'; Gui = $false }
     )
