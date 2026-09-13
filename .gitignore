@@ -1,0 +1,38 @@
+# 构建产物
+/dist/
+/bin/
+*.exe
+*.test
+*.out
+
+# 密钥材料 —— 绝不入库
+*.pem
+*.key
+keys/
+private/
+
+# 备份产物与审计
+*.zip
+*.usbk
+*.part
+audit.log
+backups/
+
+# 临时冒烟/联调目录
+/_smoke/
+/tmp/
+*.log
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+
+# 运行期数据
+/config.json
+*.local.json
+/logs/
+/audit.jsonl
+
+# Go 工具链本地缓存（若把 GOPATH 放在仓库内）
+/.gopath/
