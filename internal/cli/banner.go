@@ -119,9 +119,17 @@ func RenderNotice(w io.Writer, toolName string) {
 // 为什么需要：`--config` 与 `--yes` 是全局开关，但每个子命令各自持有 FlagSet，
 // 未注册的 flag 会直接报 "flag provided but not defined" 而中断。
 // 这里统一注册，取值由 ExtractGlobalFlags 负责读取，避免各处重复解析。
+//
+// 已存在同名 flag 时跳过注册：子命令可以自己定义语义更具体的同名开关
+// （例如 build-client 的 `--config` 指"基础配置文件"），
+// 重复注册同名 flag 会让 flag 包直接 panic。
 func RegisterGlobalFlags(fs *flag.FlagSet) {
-	fs.String("config", "", "配置文件路径（全局开关）")
-	fs.Bool("yes", false, "跳过免责声明确认（全局开关，仅供自动化使用）")
+	if fs.Lookup("config") == nil {
+		fs.String("config", "", "配置文件路径（全局开关）")
+	}
+	if fs.Lookup("yes") == nil {
+		fs.Bool("yes", false, "跳过免责声明确认（全局开关，仅供自动化使用）")
+	}
 }
 
 // ParseArgs 解析子命令参数：先重排 flag 顺序，再交给 flag 包解析。

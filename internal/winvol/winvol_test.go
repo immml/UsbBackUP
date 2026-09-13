@@ -97,9 +97,11 @@ func TestEvaluateGateConservativeOnBadNumbers(t *testing.T) {
 		t.Fatal("总容量为 0 时应保守跳过")
 	}
 
-	overMax := Volume{Root: `E:\`, Removable: true, Ready: true, TotalBytes: 128 * gib, UsedBytes: 1 * gib}
-	if EvaluateGate(overMax, 10*gib, 64*gib).Proceed {
-		t.Fatal("超过总体积上限时应跳过")
+	// 上限比的是**待打包的数据量**（已占用），不是卷总容量：
+	// 这块盘容量 128 GiB、已占用 100 GiB，超过 64 GiB 上限 → 跳过。
+	overMax := Volume{Root: `E:\`, Removable: true, Ready: true, TotalBytes: 128 * gib, UsedBytes: 100 * gib}
+	if EvaluateGate(overMax, 200*gib, 64*gib).Proceed {
+		t.Fatal("待打包数据量超过上限时应跳过")
 	}
 }
 
@@ -183,5 +185,37 @@ func TestRootsAndRemovableRoots(t *testing.T) {
 	// 只要求不报错；多数 CI/开发机上没有可移动介质。
 	if _, err := RemovableRoots(); err != nil {
 		t.Fatalf("RemovableRoots 失败: %v", err)
+	}
+}
+
+func TestGateMaxTotalComparesUsedNotCapacity(t *testing.T) {
+	// 一块 64 GiB 的 U 盘只用了 500 MiB：应当放行。
+	// 若上限误与"卷总容量"比较，这里会被错误跳过（回归测试）。
+	v := Volume{
+		Root:       `E:\`,
+		Ready:      true,
+		TotalBytes: 64 * 1024 * 1024 * 1024,
+		UsedBytes:  500 * 1024 * 1024,
+		FreeBytes:  64*1024*1024*1024 - 500*1024*1024,
+	}
+	p := EvaluateGate(v, 10*1024*1024*1024, 10*1024*1024*1024)
+	if !p.Proceed {
+		t.Fatalf("已占用 500MiB 的 64GiB 盘应放行，实际跳过：%s", p.Reason)
+	}
+
+	// 已占用超过上限 → 跳过。
+	v.UsedBytes = 12 * 1024 * 1024 * 1024
+	p = EvaluateGate(v, 20*1024*1024*1024, 10*1024*1024*1024)
+	if p.Proceed {
+		t.Fatal("已占用 12GiB 超过 10GiB 上限时应跳过")
+	}
+	if !strings.Contains(p.Reason, "待打包数据量") {
+		t.Fatalf("跳过原因应指向待打包数据量，实际：%s", p.Reason)
+	}
+
+	// 上限为 0 表示不限制：大容量小占用的盘同样放行。
+	p = EvaluateGate(v, 20*1024*1024*1024, 0)
+	if !p.Proceed {
+		t.Fatalf("上限为 0（不限制）时应放行，实际：%s", p.Reason)
 	}
 }

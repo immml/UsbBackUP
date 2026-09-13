@@ -25,6 +25,90 @@ const GiB int64 = 1024 * 1024 * 1024
 // DefaultUsedThresholdBytes 是容量门控默认阈值：10 GiB（F-304 / Q-01）。
 const DefaultUsedThresholdBytes int64 = 10 * GiB
 
+// DefaultMaxTotalBytes 是整盘打包体积上限：10 GiB（Q-07 定案）。
+//
+// 分支 B 只在"已占用 ≤ 阈值"时才执行，产物本不会超过该阈值；
+// 这里再设一道同值上限，是为了挡住压缩反而膨胀的极端输入
+// （全是不可压缩的随机数据时 deflate 后可能略大于原始体积），
+// 以及防止有人把门控阈值调高后忘记同步这道上限。
+const DefaultMaxTotalBytes int64 = 10 * GiB
+
+// maxParseSizeBytes 是 ParseSize 接受的上限，防止浮点乘法溢出 int64。
+const maxParseSizeBytes = int64(1) << 62
+
+// ParseSize 解析人类可读的容量写法，返回字节数。
+//
+// 支持（不区分大小写，数字与单位之间可有空格）：
+//
+//	"10737418240"        纯数字视为字节
+//	"10GiB" "10G" "10g"  10 × 1024³（二进制，Windows 资源管理器口径）
+//	"10GB"  "10gb"       10 × 1000³（十进制，硬盘厂商标称口径）
+//	"1.5TiB" "512MiB" "256KiB" "1024"
+//	"0" "unlimited"      0，表示不限制
+//
+// 为什么需要它：阈值写成裸字节数极易写错位数，而"10GiB"与"10GB"相差 7.4%，
+// 边界盘（10.0~10.7 GB）的行为完全不同。与其在文档里解释，不如让配置
+// 直接把单位写清楚。
+func ParseSize(s string) (int64, error) {
+	v := strings.ToLower(strings.TrimSpace(s))
+	if v == "" {
+		return 0, errors.New("容量写法为空")
+	}
+	if v == "0" || v == "unlimited" || v == "none" {
+		return 0, nil
+	}
+
+	// 切分数字部分与单位部分。
+	i := 0
+	for i < len(v) && (v[i] >= '0' && v[i] <= '9' || v[i] == '.' || v[i] == '+' || v[i] == '-') {
+		i++
+	}
+	numPart := strings.TrimSpace(v[:i])
+	unit := strings.TrimSpace(v[i:])
+	if numPart == "" {
+		return 0, fmt.Errorf("容量写法 %q 缺少数字部分", s)
+	}
+	f, err := strconv.ParseFloat(numPart, 64)
+	if err != nil {
+		return 0, fmt.Errorf("容量写法 %q 的数字部分非法: %w", s, err)
+	}
+	if f < 0 {
+		return 0, fmt.Errorf("容量不能为负: %q", s)
+	}
+
+	// 带 i 的是二进制单位（KiB/MiB/GiB/TiB），不带 i 且带 B 的是十进制（KB/MB/GB/TB），
+	// 单独一个字母（K/M/G/T）按 Windows 习惯归入二进制。
+	var mult float64
+	switch unit {
+	case "":
+		mult = 1
+	case "k", "ki", "kib":
+		mult = 1024
+	case "m", "mi", "mib":
+		mult = 1024 * 1024
+	case "g", "gi", "gib":
+		mult = 1024 * 1024 * 1024
+	case "t", "ti", "tib":
+		mult = 1024 * 1024 * 1024 * 1024
+	case "kb":
+		mult = 1e3
+	case "mb":
+		mult = 1e6
+	case "gb":
+		mult = 1e9
+	case "tb":
+		mult = 1e12
+	default:
+		return 0, fmt.Errorf("容量写法 %q 的单位 %q 无法识别（可用 GiB/GB/MiB/MB/KiB/TiB 等）", s, unit)
+	}
+
+	n := f * mult
+	if n > float64(maxParseSizeBytes) {
+		return 0, fmt.Errorf("容量写法 %q 超出可表示范围", s)
+	}
+	return int64(n), nil
+}
+
 // MonitorConfig 是设备监控配置（F-1xx）。
 type MonitorConfig struct {
 	// PollIntervalSec 是轮询兜底间隔秒数（F-103）。
@@ -69,7 +153,12 @@ type DetectConfig struct {
 type GateConfig struct {
 	// UsedThresholdBytes 是"已占用容量"阈值，超过则跳过整盘打包。
 	UsedThresholdBytes int64 `json:"used_threshold_bytes"`
-	// MaxTotalBytes 是整盘打包体积上限（Q-07），0 表示不限制。
+	// UsedThreshold 是同一阈值的**人类可读写法**（如 "10GiB" / "10GB"），由 ParseSize 解析。
+	//
+	// 两个字段表达同一件事：写裸字节容易错位数，写 "10GiB" 不容易出错。
+	// 只写其中一个是推荐用法；两个都写且含义不一致会在 Validate 中报错（Q-01）。
+	UsedThreshold string `json:"used_threshold"`
+	// MaxTotalBytes 是整盘打包体积上限（Q-07），0 表示不限制，默认 10 GiB。
 	MaxTotalBytes int64 `json:"max_total_bytes"`
 	// FreeSpaceMarginPercent 是回写前剩余空间预留百分比（F-306），默认 5。
 	FreeSpaceMarginPercent int `json:"free_space_margin_percent"`
@@ -163,7 +252,7 @@ func Default() *Config {
 		},
 		Gate: GateConfig{
 			UsedThresholdBytes:     DefaultUsedThresholdBytes,
-			MaxTotalBytes:          0,
+			MaxTotalBytes:          DefaultMaxTotalBytes,
 			FreeSpaceMarginPercent: 5,
 		},
 		Archive: ArchiveConfig{
@@ -268,6 +357,19 @@ func (c *Config) ApplyEnv() []string {
 			applied = append(applied, "USBBACKUP_USED_THRESHOLD_BYTES")
 		}
 	}
+	// 人类可读写法优先级更高：同一轮里两条都给时，以可读写法为准。
+	if v := strings.TrimSpace(os.Getenv("USBBACKUP_USED_THRESHOLD")); v != "" {
+		if n, err := ParseSize(v); err == nil {
+			c.Gate.UsedThresholdBytes = n
+			applied = append(applied, "USBBACKUP_USED_THRESHOLD")
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv("USBBACKUP_MAX_TOTAL_BYTES")); v != "" {
+		if n, err := ParseSize(v); err == nil && n >= 0 {
+			c.Gate.MaxTotalBytes = n
+			applied = append(applied, "USBBACKUP_MAX_TOTAL_BYTES")
+		}
+	}
 	if v := strings.TrimSpace(os.Getenv("USBBACKUP_POLL_INTERVAL_SEC")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			c.Monitor.PollIntervalSec = n
@@ -325,6 +427,22 @@ func (c *Config) Validate() error {
 	if c.Gate.UsedThresholdBytes < 0 {
 		return errors.New("gate.used_threshold_bytes 不能为负")
 	}
+	if c.Gate.MaxTotalBytes < 0 {
+		return errors.New("gate.max_total_bytes 不能为负")
+	}
+	// 人类可读写法优先；与裸字节并存时必须含义一致，否则说明配置写重了。
+	if s := strings.TrimSpace(c.Gate.UsedThreshold); s != "" {
+		n, err := ParseSize(s)
+		if err != nil {
+			return fmt.Errorf("gate.used_threshold 非法: %w", err)
+		}
+		if c.Gate.UsedThresholdBytes != DefaultUsedThresholdBytes && c.Gate.UsedThresholdBytes != n {
+			return fmt.Errorf(
+				"gate.used_threshold(%q = %d 字节) 与 gate.used_threshold_bytes(%d 字节) 含义冲突，请只保留一种写法",
+				s, n, c.Gate.UsedThresholdBytes)
+		}
+		c.Gate.UsedThresholdBytes = n
+	}
 	if m := strings.ToLower(strings.TrimSpace(c.Detect.Mode)); m != "heuristic" && m != "marker" && m != "both" {
 		return fmt.Errorf("detect.mode 取值非法 %q（可用 heuristic/marker/both）", c.Detect.Mode)
 	}
@@ -367,6 +485,7 @@ func (c *Config) Summary() []string {
 		fmt.Sprintf("公钥路径        = %s", c.PublicKeyPath),
 		fmt.Sprintf("检测模式        = %s", c.Detect.Mode),
 		fmt.Sprintf("容量门控阈值    = %d 字节 (%s)", c.Gate.UsedThresholdBytes, humanGiB(c.Gate.UsedThresholdBytes)),
+		fmt.Sprintf("打包体积上限    = %s", humanLimit(c.Gate.MaxTotalBytes)),
 		fmt.Sprintf("轮询间隔        = %ds（事件驱动为主，轮询兜底）", c.Monitor.PollIntervalSec),
 		fmt.Sprintf("作业超时        = %d 分钟", c.Monitor.JobTimeoutMin),
 		fmt.Sprintf("日志级别/文件   = %s / %s", c.Log.Level, c.Log.File),
@@ -375,4 +494,12 @@ func (c *Config) Summary() []string {
 
 func humanGiB(n int64) string {
 	return fmt.Sprintf("%.2f GiB", float64(n)/float64(GiB))
+}
+
+// humanLimit 把上限值格式化为可读文本；0 表示不限制，要说清楚而不是显示 "0.00 GiB"。
+func humanLimit(n int64) string {
+	if n <= 0 {
+		return "不限制"
+	}
+	return fmt.Sprintf("%d 字节 (%s)", n, humanGiB(n))
 }

@@ -250,8 +250,12 @@ func EvaluateGate(v Volume, thresholdBytes, maxTotalBytes int64) Policy {
 	if v.UsedBytes > thresholdBytes {
 		return Policy{Proceed: false, Reason: fmt.Sprintf("已占用容量超过阈值，按配置跳过整盘打包")}
 	}
-	if maxTotalBytes > 0 && v.TotalBytes > maxTotalBytes {
-		return Policy{Proceed: false, Reason: fmt.Sprintf("卷总容量超过上限，按配置跳过整盘打包")}
+	if maxTotalBytes > 0 && v.UsedBytes > maxTotalBytes {
+		// 比较对象是**待打包的数据量**（已占用容量），不是卷总容量。
+		//
+		// 若拿卷总容量来比，一块 64 GiB 的 U 盘哪怕只用了 500 MiB 也会被跳过，
+		// 等于把"打包体积上限"误变成"介质容量上限"，与意图完全相反。
+		return Policy{Proceed: false, Reason: "待打包数据量超过上限，按配置跳过整盘打包"}
 	}
 	return Policy{Proceed: true, Reason: "已占用容量在阈值以内，执行整盘打包"}
 }

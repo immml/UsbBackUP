@@ -208,3 +208,117 @@ func TestSummaryHasNoSecrets(t *testing.T) {
 		}
 	}
 }
+
+func TestParseSizeUnits(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int64
+	}{
+		{"0", 0},
+		{"unlimited", 0},
+		{"none", 0},
+		{"1024", 1024},
+		{"10GiB", 10 * GiB},
+		{"10G", 10 * GiB},
+		{"10g", 10 * GiB},
+		{"10 gib", 10 * GiB},
+		{"10GB", 10 * 1000 * 1000 * 1000},
+		{"10gb", 10 * 1000 * 1000 * 1000},
+		{"1.5TiB", int64(1.5 * float64(1024*1024*1024*1024))},
+		{"512MiB", 512 * 1024 * 1024},
+		{"256KiB", 256 * 1024},
+		{"1MB", 1000 * 1000},
+	}
+	for _, c := range cases {
+		got, err := ParseSize(c.in)
+		if err != nil {
+			t.Fatalf("ParseSize(%q) 报错: %v", c.in, err)
+		}
+		if got != c.want {
+			t.Errorf("ParseSize(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+}
+
+func TestParseSizeRejectsBadInput(t *testing.T) {
+	bad := []string{"", "   ", "abc", "GiB", "10 XB", "10QB", "-1GiB", "1e999GiB"}
+	for _, b := range bad {
+		if _, err := ParseSize(b); err == nil {
+			t.Errorf("ParseSize(%q) 期望报错", b)
+		}
+	}
+}
+
+func TestGiBvsGBThresholdDiffers(t *testing.T) {
+	// 这正是 Q-01 的意义：两种口径在边界盘上会给出不同的结论。
+	gib, _ := ParseSize("10GiB")
+	gb, _ := ParseSize("10GB")
+	if gib <= gb {
+		t.Fatalf("10GiB(%d) 应大于 10GB(%d)", gib, gb)
+	}
+	// 10.5 GB 的盘：按 GiB 口径放行，按 GB 口径跳过。
+	const disk = int64(10_500_000_000)
+	if disk > gib {
+		t.Errorf("10.5e9 应按 GiB 口径放行（阈值 %d）", gib)
+	}
+	if disk <= gb {
+		t.Errorf("10.5e9 应按 GB 口径跳过（阈值 %d）", gb)
+	}
+}
+
+func TestHumanReadableThresholdOverridesBytes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	body := `{"gate":{"used_threshold":"4GiB"}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, loaded, err := Load(path)
+	if err != nil || !loaded {
+		t.Fatalf("加载失败: loaded=%v err=%v", loaded, err)
+	}
+	cfg.ApplyEnv()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("校验失败: %v", err)
+	}
+	if cfg.Gate.UsedThresholdBytes != 4*GiB {
+		t.Fatalf("人类可读写法未生效: %d", cfg.Gate.UsedThresholdBytes)
+	}
+}
+
+func TestConflictingThresholdWritesAreRejected(t *testing.T) {
+	c := Default()
+	c.Gate.UsedThreshold = "4GiB"
+	c.Gate.UsedThresholdBytes = 8 * GiB
+	if err := c.Validate(); err == nil {
+		t.Fatal("两种写法含义冲突时应报错")
+	}
+}
+
+func TestDefaultMaxTotalBytesIsTenGiB(t *testing.T) {
+	c := Default()
+	if c.Gate.MaxTotalBytes != DefaultMaxTotalBytes {
+		t.Fatalf("默认打包上限应为 %d，实际 %d", DefaultMaxTotalBytes, c.Gate.MaxTotalBytes)
+	}
+	if DefaultMaxTotalBytes != 10*GiB {
+		t.Fatalf("Q-07 定案为 10 GiB，实际 %d", DefaultMaxTotalBytes)
+	}
+}
+
+func TestHumanLimitShowsUnlimited(t *testing.T) {
+	if got := humanLimit(0); got != "不限制" {
+		t.Fatalf("0 应显示为“不限制”，实际 %q", got)
+	}
+	if got := humanLimit(10 * GiB); !strings.Contains(got, "10.00 GiB") {
+		t.Fatalf("10GiB 显示异常: %q", got)
+	}
+}
+
+func TestMaxTotalBytesEnvOverride(t *testing.T) {
+	c := Default()
+	t.Setenv("USBBACKUP_MAX_TOTAL_BYTES", "2GiB")
+	c.ApplyEnv()
+	if c.Gate.MaxTotalBytes != 2*GiB {
+		t.Fatalf("环境变量未生效: %d", c.Gate.MaxTotalBytes)
+	}
+}
