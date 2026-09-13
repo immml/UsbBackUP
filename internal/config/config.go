@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/immml/UsbBackup/internal/version"
+	"github.com/immml/UsbBackUP/internal/version"
 )
 
 // GiB 是一个 Gibibyte（1024^3）。容量阈值统一按 GiB 计（决策 D-02）。

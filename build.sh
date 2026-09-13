@@ -49,10 +49,10 @@ BUILD_TIME="$(date +%Y-%m-%dT%H:%M:%S%z)"
 BUILD_USER="$(whoami 2>/dev/null || echo unknown)"
 
 LD="-s -w \
--X github.com/immml/UsbBackup/internal/version.Version=$VERSION \
--X github.com/immml/UsbBackup/internal/version.Commit=$COMMIT \
--X github.com/immml/UsbBackup/internal/version.BuildTime=$BUILD_TIME \
--X github.com/immml/UsbBackup/internal/version.BuildUser=$BUILD_USER"
+-X github.com/immml/UsbBackUP/internal/version.Version=$VERSION \
+-X github.com/immml/UsbBackUP/internal/version.Commit=$COMMIT \
+-X github.com/immml/UsbBackUP/internal/version.BuildTime=$BUILD_TIME \
+-X github.com/immml/UsbBackUP/internal/version.BuildUser=$BUILD_USER"
 
 echo "go      : $GO"
 echo "version : $VERSION"

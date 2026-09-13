@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/immml/UsbBackup/internal/config"
+	"github.com/immml/UsbBackUP/internal/config"
 )
 
 // genForTest 生成一把 2048 位测试密钥（4096 位仅用于生产，测试中太慢）。

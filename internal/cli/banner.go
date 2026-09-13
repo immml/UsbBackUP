@@ -10,7 +10,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/immml/UsbBackup/internal/version"
+	"github.com/immml/UsbBackUP/internal/version"
 )
 
 // 退出码约定（供全部子命令统一使用）。

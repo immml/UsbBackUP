@@ -18,12 +18,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/immml/UsbBackup/internal/archive"
-	"github.com/immml/UsbBackup/internal/cli"
-	"github.com/immml/UsbBackup/internal/crypto"
-	"github.com/immml/UsbBackup/internal/fsutil"
-	"github.com/immml/UsbBackup/internal/keystore"
-	"github.com/immml/UsbBackup/internal/version"
+	"github.com/immml/UsbBackUP/internal/archive"
+	"github.com/immml/UsbBackUP/internal/cli"
+	"github.com/immml/UsbBackUP/internal/crypto"
+	"github.com/immml/UsbBackUP/internal/fsutil"
+	"github.com/immml/UsbBackUP/internal/keystore"
+	"github.com/immml/UsbBackUP/internal/version"
 )
 
 const toolName = "usbunseal"

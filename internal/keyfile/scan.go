@@ -25,8 +25,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/immml/UsbBackup/internal/config"
-	"github.com/immml/UsbBackup/internal/fsutil"
+	"github.com/immml/UsbBackUP/internal/config"
+	"github.com/immml/UsbBackUP/internal/fsutil"
 )
 
 // skipDirs 是扫描时跳过的目录名（小写比较），对应 F-205。

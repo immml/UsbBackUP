@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/immml/UsbBackup/internal/fsutil"
+	"github.com/immml/UsbBackUP/internal/fsutil"
 )
 
 // ErrNotImplemented 表示该能力尚未实现。

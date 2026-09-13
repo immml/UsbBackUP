@@ -86,10 +86,10 @@ try {
 
     $commonLd = @(
         '-s', '-w',
-        '-X', "github.com/immml/UsbBackup/internal/version.Version=$Version",
-        '-X', "github.com/immml/UsbBackup/internal/version.Commit=$commit",
-        '-X', "github.com/immml/UsbBackup/internal/version.BuildTime=$buildTime",
-        '-X', "github.com/immml/UsbBackup/internal/version.BuildUser=$buildUser"
+        '-X', "github.com/immml/UsbBackUP/internal/version.Version=$Version",
+        '-X', "github.com/immml/UsbBackUP/internal/version.Commit=$commit",
+        '-X', "github.com/immml/UsbBackUP/internal/version.BuildTime=$buildTime",
+        '-X', "github.com/immml/UsbBackUP/internal/version.BuildUser=$buildUser"
     ) -join ' '
 
     $env:GOOS = 'windows'

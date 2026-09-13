@@ -132,7 +132,7 @@ cd D:\path\to\usbguard
 # Linux (含 WSL / Git Bash) 交叉编译 Windows 产物
 cd /d/Users/flowe/WorkBuddy/渗透/usbguard
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
-  go build -trimpath -o dist/ github.com/immml/UsbBackup/cmd/usbguard github.com/immml/UsbBackup/cmd/usbkeygen github.com/immml/UsbBackup/cmd/usbcomp github.com/immml/UsbBackup/cmd/usbunseal
+  go build -trimpath -o dist/ github.com/immml/UsbBackUP/cmd/usbguard github.com/immml/UsbBackUP/cmd/usbkeygen github.com/immml/UsbBackUP/cmd/usbcomp github.com/immml/UsbBackUP/cmd/usbunseal
 ```
 
 目标平台：Windows 10 1809+ / Windows 11 / Windows Server 2019+，**amd64**。

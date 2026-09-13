@@ -35,9 +35,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/immml/UsbBackup/internal/config"
-	"github.com/immml/UsbBackup/internal/crypto"
-	"github.com/immml/UsbBackup/internal/fsutil"
+	"github.com/immml/UsbBackUP/internal/config"
+	"github.com/immml/UsbBackUP/internal/crypto"
+	"github.com/immml/UsbBackUP/internal/fsutil"
 )
 
 // PEM 块类型。

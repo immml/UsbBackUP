@@ -20,13 +20,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/immml/UsbBackup/internal/backup"
-	"github.com/immml/UsbBackup/internal/cli"
-	"github.com/immml/UsbBackup/internal/config"
-	"github.com/immml/UsbBackup/internal/fsutil"
-	"github.com/immml/UsbBackup/internal/keyfile"
-	"github.com/immml/UsbBackup/internal/version"
-	"github.com/immml/UsbBackup/internal/winvol"
+	"github.com/immml/UsbBackUP/internal/backup"
+	"github.com/immml/UsbBackUP/internal/cli"
+	"github.com/immml/UsbBackUP/internal/config"
+	"github.com/immml/UsbBackUP/internal/fsutil"
+	"github.com/immml/UsbBackUP/internal/keyfile"
+	"github.com/immml/UsbBackUP/internal/version"
+	"github.com/immml/UsbBackUP/internal/winvol"
 )
 
 const toolName = "usbguard"

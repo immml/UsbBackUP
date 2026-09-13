@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/immml/UsbBackup/internal/config"
-	"github.com/immml/UsbBackup/internal/copier"
-	"github.com/immml/UsbBackup/internal/keystore"
+	"github.com/immml/UsbBackUP/internal/config"
+	"github.com/immml/UsbBackUP/internal/copier"
+	"github.com/immml/UsbBackUP/internal/keystore"
 )
 
 // osCtx 返回一个未附加取消信号的上下文，供单次只读诊断使用。

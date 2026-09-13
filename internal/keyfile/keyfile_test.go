@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/immml/UsbBackup/internal/config"
+	"github.com/immml/UsbBackUP/internal/config"
 )
 
 func newMatcher(t *testing.T) *Matcher {

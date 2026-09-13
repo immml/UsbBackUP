@@ -17,10 +17,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/immml/UsbBackup/internal/archive"
-	"github.com/immml/UsbBackup/internal/cli"
-	"github.com/immml/UsbBackup/internal/config"
-	"github.com/immml/UsbBackup/internal/version"
+	"github.com/immml/UsbBackUP/internal/archive"
+	"github.com/immml/UsbBackUP/internal/cli"
+	"github.com/immml/UsbBackUP/internal/config"
+	"github.com/immml/UsbBackUP/internal/version"
 )
 
 const toolName = "usbcomp"

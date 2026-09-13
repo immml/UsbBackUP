@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/immml/UsbBackup/internal/winvol"
+	"github.com/immml/UsbBackUP/internal/winvol"
 )
 
 func TestProductNameSanitizes(t *testing.T) {

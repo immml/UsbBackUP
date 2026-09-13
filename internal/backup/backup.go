@@ -27,10 +27,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/immml/UsbBackup/internal/config"
-	"github.com/immml/UsbBackup/internal/fsutil"
-	"github.com/immml/UsbBackup/internal/keyfile"
-	"github.com/immml/UsbBackup/internal/winvol"
+	"github.com/immml/UsbBackUP/internal/config"
+	"github.com/immml/UsbBackUP/internal/fsutil"
+	"github.com/immml/UsbBackUP/internal/keyfile"
+	"github.com/immml/UsbBackUP/internal/winvol"
 )
 
 // ErrNotImplemented 表示该能力尚未实现。
