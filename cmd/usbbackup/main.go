@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/immml/UsbBackUP/internal/agreement"
 	"github.com/immml/UsbBackUP/internal/backup"
 	"github.com/immml/UsbBackUP/internal/cli"
 	"github.com/immml/UsbBackUP/internal/config"
@@ -74,11 +75,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			// 服务模式：由 SCM 启动，既没有控制台也无法交互确认。
 			// 这里必须静默通过——否则读不到 I AGREE 会立刻退出，
 			// SCM 会报 1053「服务没有及时响应启动或控制请求」。
+		case agreement.Accepted():
+			// 已用 `accept` 确认过：无人值守运行，不打印横幅、不交互。
+			// 摘要与作业结果照常输出到 stdout 与日志文件，方便命令行下排障；
+			// 双击运行（windowsgui）本就看不到这些输出。
 		case skipConfirm:
 			cli.RenderNotice(stdout, toolName)
 		default:
 			cli.RenderBanner(stdout, toolName)
 			if err := cli.ConfirmAgreement(stdin, stdout); err != nil {
+				fmt.Fprintf(stderr, "\n提示：若要无人值守运行，请先执行一次：%s accept\n\n", toolName)
 				return cli.ExitNotAgreed
 			}
 		}
@@ -89,6 +95,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdRun(rest, cfgPath, stdout, stderr)
 	case "once":
 		return cmdOnce(rest, cfgPath, stdout, stderr)
+	case "accept":
+		return cmdAccept(rest, stdin, stdout, stderr)
 	case "list":
 		return cmdList(rest, stdout, stderr)
 	case "probe":
@@ -116,6 +124,13 @@ func printUsage(w io.Writer) {
 		"  usbbackup uninstall-service             删除服务（需管理员）",
 		"  usbbackup start | stop | status         控制已注册的服务",
 		"  usbbackup version                       显示版本信息",
+		"  usbbackup accept                        首次知情同意（确认后 run/once 静默运行）",
+		"",
+		"accept 选项：",
+		"  --yes             非交互确认（供部署脚本使用）",
+		"  --check           只查看当前是否已确认（未确认退出码 2）",
+		"  --revoke          撤销确认，恢复首次确认流程",
+		"  --force           已确认时也重新确认",
 		"",
 		"全局开关（可放在任意位置）：",
 		"  --config string   配置文件路径",
@@ -705,6 +720,13 @@ func cmdService(sub string, stdout, stderr io.Writer) int {
 	var err error
 	switch sub {
 	case "install-service":
+		// 服务由 SCM 启动、没有控制台，不可能再弹确认。
+		// 所以在注册之前就把"是否已确认"讲清楚，避免装完才发现服务跑不起来或未经确认就跑了。
+		if !agreement.Accepted() {
+			fmt.Fprintln(stdout, "提示：本机尚未执行过知情同意确认。")
+			fmt.Fprintf(stdout, "      服务无控制台，不会也不该在启动时弹确认。请先执行：%s accept\n", toolName)
+			fmt.Fprintln(stdout, "      （服务模式下即使未确认也会运行——请确保已获授权后再注册服务。）")
+		}
 		err = winsvc.Install("")
 		if err == nil {
 			fmt.Fprintln(stdout, "服务已注册为 usbbackup（启动类型：手动）。")
