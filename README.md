@@ -10,7 +10,26 @@
 
 ## 1. 它做什么
 
-插入 U 盘后，`usbbackup` 自动判断该介质属于哪一类，并执行对应动作：
+### 三个角色（典型部署形态）
+
+| 角色 | 程序 | 运行位置 | 持有内容 |
+|---|---|---|---|
+| **生成器** | `usbkeygen` | 你的机器 | 生成密钥对；**私钥始终留在你这里** |
+| **客户端** | 生成器产出的 `client.exe` | 目标机器 | 只有**公钥与配置**，硬编码进 exe |
+| **解压器** | `usbunseal` | 你的机器 | 用**私钥**解密并还原 |
+
+```
+生成器 ──产出──► 客户端（内嵌配置+公钥）──在目标机器上──► 打包加密 .usbk
+   │                                                          │
+   └──私钥留在本地──────► 解压器 ◄──────取回 .usbk──────────────┘
+```
+
+客户端**没有私钥**：即使整个 exe 被人拷走，也解不开它自己产出的文件。
+这不是靠隐藏，而是混合加密里"公钥可公开、私钥不离开你"的直接结果。
+
+### 插入后做什么
+
+插入 U 盘后，`usbbackup`（或客户端）自动判断该介质属于哪一类，并执行对应动作：
 
 ```
                     ┌──────────────────────────┐
@@ -32,7 +51,7 @@
                                      ┌──────────────┐  ┌────────────────────────┐
                                      │   直接跳过    │  │ 分支 B：整盘打包 + 加密  │
                                      └──────────────┘  │ zip → AES-256-GCM      │
-                                                       │ → RSA-4096-OAEP 包装会话│
+                                                       │ → RSA-OAEP 包装会话密钥  │
                                                        │ → %TEMP%\backup\*.usbk │
                                                        │ 源盘全程只读            │
                                                        └────────────────────────┘
@@ -60,7 +79,7 @@
 ```
                     随机会话密钥（32 字节，仅存在于内存）
                               │
-        RSA-4096-OAEP(SHA-256)│  ← 非对称算法只用在这里
+        RSA-OAEP(SHA-256)      │  ← 非对称算法只用在这里
                               ▼
                      512 字节"包装密钥" ──► 写入容器头
                               
@@ -69,7 +88,7 @@
 
 | 组成 | 算法 / 参数 |
 |---|---|
-| 密钥包装 | RSA-4096 + OAEP(SHA-256)，label `usbbackup/v1`（协议常量，与仓库路径无关）（下限 2048 位） |
+| 密钥包装 | RSA + OAEP(SHA-256)，label `usbbackup/v1`（协议常量，与仓库路径无关）；默认 4096 位、下限 2048 位 |
 | 数据加密 | AES-256-GCM，默认分块 1 MiB |
 | 分块 Nonce | 8 字节随机前缀 ‖ 4 字节块序号（大端），保证同密钥下绝不重复 |
 | 分块 AAD | 容器头哈希 ‖ 块序号 ‖ 帧标志 → 防块重排、跨文件拼接、头部篡改 |
@@ -151,9 +170,49 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
 | `use <公钥>` | 选择已有公钥并登记到配置。传入私钥会被明确拒绝 |
 | `inspect <公钥>` | 查看公钥位数与 SHA-256 指纹（分组十六进制） |
 | `selftest` | 就地验证混合加密往返、篡改检测、截断检测、错误密钥拒绝。全程内存操作，不落盘 |
+| **`build-client`** | **产出内嵌配置与公钥的客户端 exe**（见下节） |
 | `version` | 版本信息 |
 
 自动化场景可加 `--yes` 跳过 `I AGREE` 交互。
+
+### 4.1.1 产出客户端（推荐部署方式）
+
+```powershell
+# 1) 生成密钥对（私钥留在本地，绝不随客户端分发）
+.\usbkeygen.exe generate --out .\keys
+
+# 2) 产出客户端：配置与公钥硬编码进 exe
+.\usbkeygen.exe build-client `
+  --public .\keys\usbbackup.pub.pem `
+  --template .\usbbackup.exe `
+  --output-dir '%TEMP%\backup' `
+  --threshold 10GiB `
+  --name 'Client-A' `
+  -o .\client.exe
+```
+
+产出的 `client.exe` 拿到目标机器上**直接运行即可**，不需要 config.json、不需要公钥文件：
+
+```powershell
+.\client.exe run          # 常驻监控（事件驱动）
+.\client.exe once         # 处理当前已插入的盘后退出
+.\client.exe probe        # 只读诊断，不写任何数据
+```
+
+常用选项：`--output-dir`（产物目录，支持 `%TEMP%`）、`--source-dir`（分支 A 的本地备份源）、
+`--threshold`（容量阈值，支持 `10GiB`/`10GB`）、`--max-total`（打包上限，`0` 表示不限制）、
+`--name`（客户端标识，写入内嵌配置便于溯源）、`--config`（以某份配置文件为基础）、`--force`。
+
+**实现机制**：把 `usbbackup.exe` 复制一份，在文件末尾追加一个带 SHA-256 校验和的配置块
+（PE 文件尾部追加数据不影响运行，自解压安装包用的是同一招）。客户端启动时从自身读取该块。
+生成器不要求目标机器有 Go 工具链。
+
+**为什么这么设计**：生成器在**你的机器**上跑一次，产出的客户端自带一切；
+目标机器上没有可改的配置文件，也就无法通过改配置来改变客户端行为。
+客户端模式下 `--config` 会被明确忽略并在输出中提示。
+
+**内嵌内容只有配置与公钥**：任何把私钥塞进客户端的尝试都会被拒绝
+（`embedcfg.EnsureNoSecret`），因为客户端会落在他人可控的机器上，内嵌即等于公开。
 
 ### 4.2 主程序 `usbbackup`
 
@@ -264,8 +323,9 @@ cd D:\path\to\usbbackup
     "extra_content_markers": []
   },
   "gate": {
+    "used_threshold": "10GiB",
     "used_threshold_bytes": 10737418240,
-    "max_total_bytes": 0,
+    "max_total_bytes": 10737418240,
     "free_space_margin_percent": 5
   },
   "archive": {
@@ -281,9 +341,31 @@ cd D:\path\to\usbbackup
 
 支持的 `USBBACKUP_*` 环境变量：
 `USBBACKUP_BACKUP_SOURCE_DIR`、`USBBACKUP_OUTPUT_DIR`、`USBBACKUP_PUBLIC_KEY`、`USBBACKUP_LOG_LEVEL`、
-`USBBACKUP_AUDIT_FILE`、`USBBACKUP_USED_THRESHOLD_BYTES`、`USBBACKUP_POLL_INTERVAL_SEC`。
+`USBBACKUP_AUDIT_FILE`、`USBBACKUP_USED_THRESHOLD`（人类可读，如 `10GiB`）、
+`USBBACKUP_USED_THRESHOLD_BYTES`、`USBBACKUP_MAX_TOTAL_BYTES`、`USBBACKUP_POLL_INTERVAL_SEC`。
 
 路径支持 `%VAR%` 与 `${VAR}` 展开。配置优先级冲突时高优先级生效，并以 DEBUG 级记录来源。
+
+### 容量阈值与打包上限
+
+`gate` 段有两个值，含义不同：
+
+| 字段 | 含义 | 默认 | 比较对象 |
+|---|---|---|---|
+| `used_threshold` / `used_threshold_bytes` | 超过就**不备份** | `10GiB` | 卷的已占用容量 |
+| `max_total_bytes` | 超过就**不打包** | `10GiB`（`0` 表示不限制） | 待打包的数据量（同样是已占用容量） |
+
+**单位可以写清楚**，避免裸字节数写错位数：
+
+- `"10GiB"` / `"10G"` → 10 × 1024³（二进制，Windows 资源管理器口径）
+- `"10GB"` → 10 × 1000³（十进制，硬盘厂商标称口径）
+- 还支持 `KiB` / `MiB` / `TiB` / `KB` / `MB` / `TB` 与小数（如 `1.5TiB`）
+
+两种写法表达同一件事，**只写其中一种**。同时写且含义不一致时配置校验会直接报错。
+
+> 注意：`max_total_bytes` 比的是**待打包的数据量**，不是介质容量。
+> 一块 64 GiB 的 U 盘只用了 500 MiB 会正常备份；反之若拿容量来比，
+> 大容量小占用的盘会被全部跳过，与意图相反。
 
 ### 授权标记（可选，比启发式更确定）
 
