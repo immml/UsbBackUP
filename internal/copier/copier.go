@@ -1,6 +1,6 @@
 // Package copier 实现"授权分支"：把本地备份文件夹内容复制到 U 盘的 `\backup\` 目录。
 //
-// 状态：守卫校验（本文件已实现并测试）；复制执行器计划于 M2。
+// 状态：**已完整实现**（守卫校验见本文件，执行器见 copy.go），并有单元测试覆盖。
 //
 // 对应需求 F-401 ~ F-410。
 //
@@ -12,7 +12,6 @@
 package copier
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -22,9 +21,6 @@ import (
 
 	"github.com/immml/UsbBackUP/internal/fsutil"
 )
-
-// ErrNotImplemented 表示该能力尚未实现。
-var ErrNotImplemented = errors.New("copier: 复制执行器尚未实现（计划于 M2）")
 
 // 错误。
 var (
@@ -54,6 +50,12 @@ type Options struct {
 	VerifyHash bool
 	// MarginPercent 是剩余空间预留百分比（F-306）。
 	MarginPercent int
+	// MaxFiles 是单次回写的条目数上限，0 表示用内置默认（20 万条）。
+	MaxFiles int
+	// WriteManifest 决定是否在目标子目录写出回写清单（F-408）。
+	WriteManifest bool
+	// PublicKeyFingerprint 会写入清单，便于事后核对是哪把公钥授权的（不含私钥）。
+	PublicKeyFingerprint string
 	// Progress 是进度回调。
 	Progress func(Stats)
 }
@@ -69,7 +71,9 @@ type Stats struct {
 	VerifyFailures int
 	// ManifestWritten 表示是否写出了清单文件（F-408）。
 	ManifestWritten bool
-	Duration        time.Duration
+	// ManifestError 记录清单写入失败原因（不致命）。
+	ManifestError string
+	Duration      time.Duration
 }
 
 // TargetDir 计算并校验目标目录（`<DestRoot>\<SubDir>`）。
@@ -107,13 +111,17 @@ func Check(opt Options) (targetDir string, err error) {
 		return "", err
 	}
 
-	// 自复制守卫：源目录若位于目标卷之内（含等于目标目录），一律拒绝。
-	if fsutil.SameVolume(src, target) && fsutil.IsSubPath(fsutil.VolumeRoot(target), src) {
-		return "", fmt.Errorf("%w: 源 %s ⊂ 目标卷 %s", ErrSelfCopy, src, fsutil.VolumeRoot(target))
+	// 自复制守卫（F-406）：
+	//
+	// 真正会造成套娃的是**目录嵌套**，而不是"同卷"本身——
+	// 例如 source 为 D:/data、target 为 D:/data/backup 时，来回复制会让每轮体积翻倍。
+	// 因此这里只拒绝两种嵌套关系，允许同卷内的互不相交目录
+	// （这同时也让 --allow-fixed 的验证场景可用）。
+	if fsutil.IsSubPath(target, src) {
+		return "", fmt.Errorf("%w: 源目录 %s 位于回写目标 %s 之内", ErrSelfCopy, src, target)
 	}
-	// 反向：目标目录位于源目录之内，同样会造成递归复制。
 	if fsutil.IsSubPath(src, target) {
-		return "", fmt.Errorf("%w: 目标 %s ⊂ 源 %s", ErrSelfCopy, target, src)
+		return "", fmt.Errorf("%w: 回写目标 %s 位于源目录 %s 之内", ErrSelfCopy, target, src)
 	}
 
 	st, err := os.Stat(fsutil.LongPath(src))
@@ -124,17 +132,4 @@ func Check(opt Options) (targetDir string, err error) {
 		return "", fmt.Errorf("%w: %s", ErrSourceMissing, src)
 	}
 	return target, nil
-}
-
-// Copy 执行复制（实现计划见 M2）。
-//
-// 实现计划：
-//  1. 调用 Check 完成全部守卫校验；
-//  2. 遍历源目录，跳过重解析点，经 fsutil.LongPath 处理超长路径；
-//  3. 目标已存在且 size+mtime 一致 → 跳过（F-402）；
-//  4. 目标已存在但不一致 → 按 Overwrite 决定跳过或覆盖（F-403）；
-//  5. 单文件失败记入 FilesFailed 并 WARN，不中断整体；
-//  6. 写出清单 `.usbguard-manifest.json`（F-408），其中**不含私钥与文件内容**。
-func Copy(ctx context.Context, opt Options) (Stats, error) {
-	return Stats{}, ErrNotImplemented
 }

@@ -1,6 +1,7 @@
 package copier
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,23 +39,31 @@ func TestTargetDir(t *testing.T) {
 }
 
 func TestCheckRejectsSelfCopy(t *testing.T) {
-	// 源目录位于目标盘之内 → 必须拒绝（F-406，防套娃）。
-	src := filepath.FromSlash(`E:\mybackup`)
-
-	if _, err := Check(Options{SourceDir: src, DestRoot: `E:\`, SubDir: "backup"}); err == nil {
-		t.Fatal("源目录与目标在同一卷时应拒绝")
+	// 情形 1：源目录位于回写目标之内 → 拒绝（F-406，防套娃）。
+	base := t.TempDir()
+	srcInsideTarget := filepath.Join(base, "backup", "inner")
+	if err := os.MkdirAll(srcInsideTarget, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Check(Options{SourceDir: srcInsideTarget, DestRoot: base, SubDir: "backup"}); err == nil {
+		t.Fatal("源目录位于目标目录之内时应拒绝")
 	} else if !strings.Contains(err.Error(), "自复制") {
 		t.Fatalf("错误信息应说明是自复制: %v", err)
 	}
 
-	// 目标目录位于源目录之内 → 同样拒绝。
+	// 情形 2：回写目标位于源目录之内 → 同样拒绝。
 	srcDir := t.TempDir()
-	nested := filepath.Join(srcDir, "inner")
-	if err := os.MkdirAll(nested, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(srcDir, "inner"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Check(Options{SourceDir: srcDir, DestRoot: srcDir, SubDir: "inner"}); err == nil {
 		t.Fatal("目标位于源之内时应拒绝")
+	}
+
+	// 情形 3：源目录恰好等于目标目录 → 拒绝。
+	eq := t.TempDir()
+	if _, err := Check(Options{SourceDir: eq, DestRoot: filepath.Dir(eq), SubDir: filepath.Base(eq)}); err == nil {
+		t.Fatal("源与目标相同时应拒绝")
 	}
 }
 
@@ -75,20 +84,26 @@ func TestCheckRequiresExistingSource(t *testing.T) {
 	}
 }
 
-func TestCheckAcceptsCrossVolume(t *testing.T) {
+func TestCheckAcceptsDisjointDirs(t *testing.T) {
+	// 同卷但互不相交的目录应通过（这才是 --allow-fixed 验证场景的常用形态）。
 	src := t.TempDir()
-	// 用不存在的目标卷只是进行字符串级校验，Check 不访问目标卷。
-	got, err := Check(Options{SourceDir: src, DestRoot: `Z:\`, SubDir: "backup"})
+	dst := t.TempDir()
+	got, err := Check(Options{SourceDir: src, DestRoot: dst, SubDir: "backup"})
 	if err != nil {
-		t.Fatalf("跨卷源目录应通过校验: %v", err)
+		t.Fatalf("互不相交的目录应通过校验: %v", err)
 	}
 	if !strings.HasSuffix(got, "backup") {
 		t.Fatalf("目标目录不正确: %q", got)
 	}
+	// 跨卷同样是允许的。
+	if _, err := Check(Options{SourceDir: src, DestRoot: `Z:\`, SubDir: "backup"}); err != nil {
+		t.Fatalf("跨卷目标应通过校验: %v", err)
+	}
 }
 
-func TestCopyNotImplementedYet(t *testing.T) {
-	if _, err := Copy(nil, Options{}); err == nil {
-		t.Fatal("未实现的执行器应返回错误而不是静默成功")
+func TestCopyRejectsUncheckedOptions(t *testing.T) {
+	// 未通过 Check 的参数必须直接失败，不能静默成功。
+	if _, err := Copy(context.Background(), Options{}); err == nil {
+		t.Fatal("空参数应返回错误")
 	}
 }
