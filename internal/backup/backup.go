@@ -17,6 +17,7 @@
 package backup
 
 import (
+	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -81,6 +82,12 @@ type Deps struct {
 	CopyVerifyHash bool
 	// CopyMaxFiles 是回写条目数上限，0 表示用内置默认。
 	CopyMaxFiles int
+	// EmbeddedPublicKey 是客户端模式下**内嵌在可执行文件里**的公钥。
+	//
+	// 非空时优先于 cfg.PublicKeyPath：客户端运行在他人可控的机器上，
+	// 不能依赖外部公钥文件（文件可能被替换、删除或指向攻击者的公钥）。
+	// 这只是一把公钥，内嵌不构成泄露（G-01）。
+	EmbeddedPublicKey *rsa.PublicKey
 }
 
 // AuditRecord 是写入 audit.jsonl 的一行。

@@ -211,9 +211,18 @@ func LoadPublicKey(path string) (*rsa.PublicKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("读取公钥文件失败 %s: %w", path, err)
 	}
+	return ParsePublicKeyPEM(raw)
+}
+
+// ParsePublicKeyPEM 直接解析内存中的 PEM 公钥。
+//
+// 客户端模式下的公钥内嵌在可执行文件里，没有独立文件可供读取，
+// 所以需要这个不经文件系统的入口。校验逻辑与 LoadPublicKey 完全一致，
+// 误传私钥时同样明确拒绝。
+func ParsePublicKeyPEM(raw []byte) (*rsa.PublicKey, error) {
 	block, _ := pem.Decode(raw)
 	if block == nil {
-		return nil, fmt.Errorf("%w: %s 不是 PEM 格式", ErrUnsupportedPEM, path)
+		return nil, fmt.Errorf("%w: 内容不是 PEM 格式", ErrUnsupportedPEM)
 	}
 	switch block.Type {
 	case pemTypePKCS1Private, pemTypePKCS8Private, pemTypeEncryptedStd, pemTypeEncryptedLocal:

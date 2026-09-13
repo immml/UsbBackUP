@@ -82,6 +82,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdInspect(rest, stdout, stderr)
 	case "selftest":
 		return cmdSelfTest(rest, stdout, stderr)
+	case "build-client":
+		return cmdBuildClient(rest, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "未知子命令 %q\n\n", sub)
 		printUsage(stderr)
@@ -96,6 +98,7 @@ func printUsage(w io.Writer) {
 		"  usbkeygen use <公钥文件>            选择已有公钥并登记到配置",
 		"  usbkeygen inspect <公钥文件>        查看公钥位数与指纹",
 		"  usbkeygen selftest                 就地校验混合加密往返（不落盘）",
+		"  usbkeygen build-client             产出内嵌配置与公钥的客户端 exe",
 		"  usbkeygen version                  显示版本信息",
 		"",
 		"用于自动化时可在子命令后追加 --yes 跳过 I AGREE 交互确认。",
@@ -108,6 +111,18 @@ func printUsage(w io.Writer) {
 		"  --force            允许覆盖已存在的密钥文件",
 		"  --pass             交互式设置私钥口令（无回显）",
 		"  --pass-file string 从文件读取口令（首行）",
+		"",
+		"build-client 选项：",
+		"  --public string    公钥 PEM 路径（必填，只能是公钥）",
+		"  -o string          输出客户端路径（必填）",
+		"  --template string  客户端模板 exe（默认同目录 usbbackup.exe）",
+		"  --config string    基础配置文件（可选）",
+		"  --output-dir DIR   覆盖产物输出目录（支持 %TEMP%）",
+		"  --source-dir DIR   覆盖分支 A 的本地备份源目录",
+		"  --threshold SIZE   覆盖容量门控阈值（如 10GiB / 10GB）",
+		"  --max-total SIZE   覆盖打包体积上限（0 或 unlimited 表示不限制）",
+		"  --name string      客户端标识",
+		"  --force            覆盖已存在的输出文件",
 		"",
 		"use 选项：",
 		"  --config string    配置文件路径（默认 %LOCALAPPDATA%\\usbbackup\\config.json）",

@@ -31,6 +31,7 @@ import (
 	"github.com/immml/UsbBackUP/internal/config"
 	"github.com/immml/UsbBackUP/internal/fsutil"
 	"github.com/immml/UsbBackUP/internal/keyfile"
+	"github.com/immml/UsbBackUP/internal/keystore"
 	"github.com/immml/UsbBackUP/internal/logx"
 	"github.com/immml/UsbBackUP/internal/version"
 	"github.com/immml/UsbBackUP/internal/winmon"
@@ -61,6 +62,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	cfgPath, skipConfirm := cli.ExtractGlobalFlags(args)
+
+	// 客户端模式探测：读取自身可执行文件尾部的内嵌配置（普通构建没有这个块）。
+	loadEmbedded(stderr)
 
 	// 会写数据的子命令需要确认；只读诊断子命令不打扰用户。
 	switch sub {
@@ -185,7 +189,12 @@ func parseRunFlags(args []string, wantDrive bool, stderr io.Writer) (runFlags, s
 // buildDeps 组装流水线依赖：配置、日志、判定器、公钥指纹。
 func buildDeps(cfg *config.Config, logger *slog.Logger, rf runFlags) (backup.Deps, error) {
 	var fp string
-	if cfg.PublicKeyPath != "" {
+	if clientBuild.ok && clientBuild.pub != nil {
+		// 客户端模式：指纹由内嵌公钥算出，与配置里的路径无关。
+		if _, got, err := keystore.PublicKeyFingerprint(clientBuild.pub); err == nil {
+			fp = got
+		}
+	} else if cfg.PublicKeyPath != "" {
 		if got, err := loadPubFingerprint(cfg.PublicKeyPath); err == nil {
 			fp = got
 		}
@@ -194,7 +203,7 @@ func buildDeps(cfg *config.Config, logger *slog.Logger, rf runFlags) (backup.Dep
 	if err != nil {
 		return backup.Deps{}, fmt.Errorf("构造私钥判定器失败: %w", err)
 	}
-	return backup.Deps{
+	deps := backup.Deps{
 		Cfg:                cfg,
 		Log:                logger,
 		Matcher:            m,
@@ -203,7 +212,11 @@ func buildDeps(cfg *config.Config, logger *slog.Logger, rf runFlags) (backup.Dep
 		DryRun:             rf.dryRun,
 		CopyOverwrite:      rf.overwrite,
 		CopyVerifyHash:     rf.verifyHsh,
-	}, nil
+	}
+	if clientBuild.ok {
+		deps.EmbeddedPublicKey = clientBuild.pub
+	}
+	return deps, nil
 }
 
 // ---- run ----
@@ -648,11 +661,22 @@ func cmdConfigCheck(cfgPath string, stdout, stderr io.Writer) int {
 		report("产物输出目录可写", true, out)
 	}
 
-	pubPath := config.ExpandPath(cfg.PublicKeyPath)
-	if _, err := keystoreLoadPub(pubPath); err == nil {
-		report("公钥可加载", true, pubPath)
+	// 客户端模式：公钥内嵌在可执行文件里，没有独立文件可供校验。
+	if clientBuild.ok && clientBuild.pub != nil {
+		bits := clientBuild.pub.N.BitLen()
+		_, fp, ferr := keystore.PublicKeyFingerprint(clientBuild.pub)
+		if ferr == nil && bits >= keystore.MinRSAKeyBits {
+			report("内嵌公钥可用", true, fmt.Sprintf("%d 位，指纹 %s", bits, fp))
+		} else {
+			report("内嵌公钥可用", false, fmt.Sprintf("%d 位（下限 %d 位）%v", bits, keystore.MinRSAKeyBits, ferr))
+		}
 	} else {
-		report("公钥可加载", false, fmt.Sprintf("%s（%v）", pubPath, err))
+		pubPath := config.ExpandPath(cfg.PublicKeyPath)
+		if _, err := keystoreLoadPub(pubPath); err == nil {
+			report("公钥可加载", true, pubPath)
+		} else {
+			report("公钥可加载", false, fmt.Sprintf("%s（%v）", pubPath, err))
+		}
 	}
 
 	audit := config.ExpandPath(cfg.AuditFile)

@@ -220,7 +220,7 @@ func runArchive(ctx context.Context, deps Deps, root string, vol winvol.Volume, 
 	}
 
 	// ---- 载入公钥（F-601）----
-	pub, fp, err := loadEncryptionKey(cfg)
+	pub, fp, err := loadEncryptionKey(cfg, deps.EmbeddedPublicKey)
 	if err != nil {
 		res.Branch = BranchFailed
 		res.Err = err.Error()
@@ -351,9 +351,22 @@ func runArchive(ctx context.Context, deps Deps, root string, vol winvol.Volume, 
 	return res, nil
 }
 
-// loadEncryptionKey 读取配置中的公钥并计算指纹。
-func loadEncryptionKey(cfg *config.Config) (*rsa.PublicKey, [32]byte, error) {
+// loadEncryptionKey 取得加密用公钥与指纹。
+//
+// 客户端模式下公钥内嵌在可执行文件里（deps.EmbeddedPublicKey），
+// 优先于配置里的路径——客户端不能依赖外部公钥文件。
+func loadEncryptionKey(cfg *config.Config, embedded *rsa.PublicKey) (*rsa.PublicKey, [32]byte, error) {
 	var zero [32]byte
+	if embedded != nil {
+		if embedded.N.BitLen() < keystore.MinRSAKeyBits {
+			return nil, zero, fmt.Errorf("内嵌公钥仅 %d 位，低于下限 %d 位", embedded.N.BitLen(), keystore.MinRSAKeyBits)
+		}
+		fp, _, err := keystore.PublicKeyFingerprint(embedded)
+		if err != nil {
+			return nil, zero, err
+		}
+		return embedded, fp, nil
+	}
 	p := config.ExpandPath(cfg.PublicKeyPath)
 	if strings.TrimSpace(p) == "" {
 		return nil, zero, errors.New("未配置公钥路径，无法执行加密（请先运行 usbkeygen generate 与 use）")
