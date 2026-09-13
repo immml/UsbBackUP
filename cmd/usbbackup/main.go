@@ -53,7 +53,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	switch sub {
 	case "version", "--version", "-v":
-		fmt.Fprintln(stdout, version.MultiLine())
+		fmt.Fprintln(stdout, version.MultiLineFor(toolName))
 		return cli.ExitOK
 	case "help", "--help", "-h":
 		printUsage(stdout)

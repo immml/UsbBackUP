@@ -50,7 +50,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// `version` 不展示横幅（它是诊断命令，需要干净的输出）。
 	if sub == "version" || sub == "--version" || sub == "-v" {
-		fmt.Fprintln(stdout, version.MultiLine())
+		fmt.Fprintln(stdout, version.MultiLineFor(toolName))
 		return cli.ExitOK
 	}
 	if sub == "help" || sub == "--help" || sub == "-h" {

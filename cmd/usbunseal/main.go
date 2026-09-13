@@ -42,7 +42,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	switch sub {
 	case "version", "--version", "-v":
-		fmt.Fprintln(stdout, version.MultiLine())
+		fmt.Fprintln(stdout, version.MultiLineFor(toolName))
 		return cli.ExitOK
 	case "list":
 		// 只读查看容器头，不接触任何密钥，不需要免责声明确认。
