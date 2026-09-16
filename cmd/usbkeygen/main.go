@@ -84,6 +84,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return cmdSelfTest(rest, stdout, stderr)
 	case "build-client":
 		return cmdBuildClient(rest, stdout, stderr)
+	case "install-usb":
+		return cmdInstallUSB(rest, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "未知子命令 %q\n\n", sub)
 		printUsage(stderr)
@@ -99,6 +101,7 @@ func printUsage(w io.Writer) {
 		"  usbkeygen inspect <公钥文件>        查看公钥位数与指纹",
 		"  usbkeygen selftest                 就地校验混合加密往返（不落盘）",
 		"  usbkeygen build-client             产出内嵌配置与公钥的客户端 exe",
+		"  usbkeygen install-usb --drive E:    组装一个便携工具 U 盘",
 		"  usbkeygen version                  显示版本信息",
 		"",
 		"用于自动化时可在子命令后追加 --yes 跳过 I AGREE 交互确认。",
@@ -111,6 +114,15 @@ func printUsage(w io.Writer) {
 		"  --force            允许覆盖已存在的密钥文件",
 		"  --pass             交互式设置私钥口令（无回显）",
 		"  --pass-file string 从文件读取口令（首行）",
+		"",
+		"install-usb 选项：",
+		"  --drive E:          目标 U 盘盘符（必填，必须是可移动磁盘）",
+		"  --public string     公钥路径（默认同目录 keys/usbbackup.pub.pem）",
+		"  --private string    私钥路径（默认同目录 keys/usbbackup.key.pem）",
+		"  --keys DIR          密钥目录（可代替上面两项）",
+		"  --without-private   不把私钥写进 U 盘",
+		"  --no-client         不生成/复制 client.exe",
+		"  --force             覆盖已存在的同名文件",
 		"",
 		"build-client 选项：",
 		"  --public string    公钥 PEM 路径（必填，只能是公钥）",

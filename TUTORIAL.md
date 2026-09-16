@@ -292,6 +292,50 @@ notepad "$env:LOCALAPPDATA\usbbackup\config.json"
 
 ---
 
+## 8b. 组装一个便携工具 U 盘
+
+把整套工具装进 U 盘，随身带、插哪台机器都能用：
+
+```powershell
+.\usbkeygen.exe install-usb --drive E: --yes
+```
+
+盘内布局：
+
+```
+E:\
+├── usbsetup.exe      交互式生成向导
+├── usbkeygen.exe     生成器
+├── usbunseal.exe     解压器
+├── usbbackup.exe     主程序 / 客户端模板
+├── usbcomp.exe       独立压缩器
+├── client.exe        已内嵌配置与公钥的客户端
+├── keys\             密钥材料
+├── .usbbackup-allow  授权标记（公钥指纹）
+└── README.txt        用法与风险说明
+```
+
+| 选项 | 说明 |
+|---|---|
+| `--drive E:` | 目标盘符（**必须是可移动磁盘**，固定盘会被拒绝） |
+| `--keys DIR` | 密钥目录（代替 `--public` / `--private` 分开写） |
+| `--without-private` | 只带公钥，私钥留在电脑上 |
+| `--no-client` | 不生成 / 复制 client.exe |
+| `--force` | 覆盖已存在的同名文件 |
+
+**为什么这个盘不会被备份走**：盘根目录有 `.usbbackup-allow`（内容是公钥指纹）。
+客户端做私钥存在性检测时会命中它，于是走**回写分支**（把本机备份源复制进盘的 `backup\`），
+而不是把整盘打包加密带走。
+
+实测：带标记的盘命中类型为 `allow-marker`，走 `authorized-writeback` 分支；
+盘上若还放着私钥文件，文件名特征也会命中（`name`），同样走回写分支。两条路都不会被打包。
+
+> **[!] 明文私钥上盘的风险**：盘丢了 = 所有用对应公钥加密的备份都能被解开。
+> 默认会写入私钥（方便现场解密），不想带就用 `--without-private`。
+> 盘内 `README.txt` 里也写了这条风险。
+
+---
+
 ## 9. 排障
 
 ### 退出码

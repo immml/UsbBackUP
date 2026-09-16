@@ -174,6 +174,7 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
 | `inspect <公钥>` | 查看公钥位数与 SHA-256 指纹（分组十六进制） |
 | `selftest` | 就地验证混合加密往返、篡改检测、截断检测、错误密钥拒绝。全程内存操作，不落盘 |
 | **`build-client`** | **产出内嵌配置与公钥的客户端 exe**（见下节） |
+| **`install-usb`** | **组装一个便携工具 U 盘**：全套工具 + 客户端 + 密钥 + 授权标记 |
 | `version` | 版本信息 |
 
 自动化场景可加 `--yes` 跳过 `I AGREE` 交互。
