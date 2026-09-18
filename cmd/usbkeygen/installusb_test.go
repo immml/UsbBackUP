@@ -177,16 +177,55 @@ func TestAssembleRefusesOverwriteWithoutForce(t *testing.T) {
 }
 
 func TestToolkitReadmeWarnsOnlyWhenPrivatePresent(t *testing.T) {
-	withPriv := toolkitReadme("aa bb cc", true)
+	withPriv := toolkitReadme("aa bb cc", true, false)
 	if !strings.Contains(withPriv, "明文私钥") {
-		t.Error("带私钥时应有风险提示")
+		t.Error("带明文私钥时应有风险提示")
 	}
-	without := toolkitReadme("aa bb cc", false)
+	without := toolkitReadme("aa bb cc", false, false)
 	if strings.Contains(without, "明文私钥") {
 		t.Error("不带私钥时不应出现私钥风险提示")
 	}
 	if !strings.Contains(without, "私钥未上盘") {
 		t.Error("不带私钥时应说明如何取私钥")
+	}
+}
+
+func TestToolkitReadmeDistinguishesEncryptedPrivate(t *testing.T) {
+	// 带口令的私钥不能再被描述成"明文"——盘上写错风险等级会误导现场的人。
+	enc := toolkitReadme("aa bb cc", true, true)
+	if strings.Contains(enc, "明文私钥") {
+		t.Error("口令保护的私钥不应被写成明文")
+	}
+	if !strings.Contains(enc, "口令保护") {
+		t.Error("应说明私钥带口令保护")
+	}
+	plain := toolkitReadme("aa bb cc", true, false)
+	if !strings.Contains(plain, "明文私钥") {
+		t.Error("明文私钥应如实标注")
+	}
+}
+
+func TestIsEncryptedPrivateKeyPEM(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := keystore.MarshalPrivateKeyPEM(key, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keystore.IsEncryptedPrivateKeyPEM(plain) {
+		t.Error("无口令私钥被误判为已加密")
+	}
+	enc, err := keystore.MarshalPrivateKeyPEM(key, []byte("correct horse battery"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !keystore.IsEncryptedPrivateKeyPEM(enc) {
+		t.Error("带口令私钥未被识别")
+	}
+	if keystore.IsEncryptedPrivateKeyPEM([]byte("not a pem at all")) {
+		t.Error("非 PEM 内容不应被判为已加密")
 	}
 }
 

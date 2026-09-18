@@ -146,9 +146,14 @@ func cmdInstallUSB(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "\n完成：共写入 %d 项到 %s\n", n, root)
 	if withPriv {
 		fmt.Fprintln(stdout)
-		fmt.Fprintln(stdout, "  [!] 盘上有**明文私钥**。U 盘一旦丢失或被复制，")
-		fmt.Fprintln(stdout, "      所有用它加密的备份都能被解开。请随身保管，")
-		fmt.Fprintln(stdout, "      或改用 --without-private 只带公钥。")
+		if privateIsEncrypted(toolkitOptions{WithPrivate: true, PrivateKeyPath: privPath}) {
+			fmt.Fprintln(stdout, "  [!] 盘上有**带口令的私钥**。盘与口令同时丢失 = 所有备份可被解开，")
+			fmt.Fprintln(stdout, "      且口令不要写在这个盘上。请随身保管，或改用 --without-private 只带公钥。")
+		} else {
+			fmt.Fprintln(stdout, "  [!] 盘上有**明文私钥**。U 盘一旦丢失或被复制，")
+			fmt.Fprintln(stdout, "      所有用它加密的备份都能被解开。请随身保管，")
+			fmt.Fprintln(stdout, "      或改用 --without-private 只带公钥。")
+		}
 	}
 	fmt.Fprintln(stdout)
 	fmt.Fprintln(stdout, "  用法：把本盘插到目标机器，运行 client.exe（先 accept 一次，之后静默）；")
@@ -219,7 +224,11 @@ func assembleToolkit(opt toolkitOptions, out io.Writer) (int, error) {
 		if err := copyFile(opt.PrivateKeyPath, filepath.Join(keyDst, "usbbackup.key.pem"), opt.Force); err != nil {
 			return written, fmt.Errorf("写入私钥失败: %w", err)
 		}
-		fmt.Fprintln(out, "  [OK] keys/usbbackup.key.pem（明文）")
+		kind := "明文"
+		if raw, err := os.ReadFile(opt.PrivateKeyPath); err == nil && keystore.IsEncryptedPrivateKeyPEM(raw) {
+			kind = "口令保护"
+		}
+		fmt.Fprintf(out, "  [OK] keys/usbbackup.key.pem（%s）\n", kind)
 		written++
 	}
 
@@ -246,7 +255,8 @@ func assembleToolkit(opt toolkitOptions, out io.Writer) (int, error) {
 	written++
 
 	// 5) 说明文件（每次都重写，保证与盘内实际内容一致）。
-	readme := toolkitReadme(fpText, opt.WithPrivate)
+	//    README 必须如实反映私钥是否带口令，否则现场的人会按错误的风险等级处理。
+	readme := toolkitReadme(fpText, opt.WithPrivate, privateIsEncrypted(opt))
 	if err := writeFile(filepath.Join(opt.Dest, "README.txt"), []byte(readme), true); err != nil {
 		return written, fmt.Errorf("写入 README.txt 失败: %w", err)
 	}
@@ -256,8 +266,21 @@ func assembleToolkit(opt toolkitOptions, out io.Writer) (int, error) {
 	return written, nil
 }
 
+// privateIsEncrypted 判断本次上盘的私钥是否带口令保护。
+// 读取失败时按"明文"处理——宁可把风险说重，也不说轻。
+func privateIsEncrypted(opt toolkitOptions) bool {
+	if !opt.WithPrivate {
+		return false
+	}
+	raw, err := os.ReadFile(opt.PrivateKeyPath)
+	if err != nil {
+		return false
+	}
+	return keystore.IsEncryptedPrivateKeyPEM(raw)
+}
+
 // toolkitReadme 生成盘内说明文件。
-func toolkitReadme(fingerprint string, hasPriv bool) string {
+func toolkitReadme(fingerprint string, hasPriv, privEncrypted bool) string {
 	var b strings.Builder
 	b.WriteString("usbbackup 便携工具盘\n")
 	b.WriteString("====================\n\n")
@@ -274,19 +297,27 @@ func toolkitReadme(fingerprint string, hasPriv bool) string {
 	b.WriteString("  1) 插上本盘，运行 client.exe accept   ← 首次确认一次\n")
 	b.WriteString("  2) 运行 client.exe run                ← 之后静默常驻\n")
 	b.WriteString("  3) 取回产物 .usbk，用 usbunseal.exe 解密：\n")
-	b.WriteString("     usbunseal.exe unseal <文件>.usbk -d <目录> --key keys/usbbackup.key.pem\n\n")
+	b.WriteString("     usbunseal.exe unseal <文件>.usbk -d <目录> --key keys/usbbackup.key.pem\n")
+	b.WriteString("     私钥带口令时追加 --pass（交互式）或 --pass-file <口令文件>\n\n")
 	b.WriteString("为什么这个盘不会被备份走\n")
 	b.WriteString("  盘根目录有 .usbbackup-allow（内容是指纹）。客户端检测到它\n")
 	b.WriteString("  会走「回写分支」，把本机备份源目录的内容复制进本盘 backup/，\n")
 	b.WriteString("  而不是把整盘打包带走。\n\n")
 	b.WriteString("公钥指纹\n")
 	fmt.Fprintf(&b, "  %s\n\n", fingerprint)
-	if hasPriv {
-		b.WriteString("[!] 私钥风险\n")
-		b.WriteString("  本盘 keys/usbbackup.key.pem 是**明文私钥**。\n")
+	if hasPriv && privEncrypted {
+		b.WriteString("[!] 私钥风险（口令保护）\n")
+		b.WriteString("  本盘 keys/usbbackup.key.pem 带口令保护：不知道口令则无法解开。\n")
+		b.WriteString("  但口令保护不等于安全——盘和口令同时丢失就等于明文丢失：\n")
+		b.WriteString("  - 不要把口令写在这个盘上的任何文件里（包括本文件）；\n")
+		b.WriteString("  - 不要把这个盘插到不受你控制的机器上；\n")
+		b.WriteString("  - 解密时会提示输入口令（usbunseal --pass）。\n")
+	} else if hasPriv {
+		b.WriteString("[!] 私钥风险（明文，高风险）\n")
+		b.WriteString("  本盘 keys/usbbackup.key.pem 是**明文私钥**，拿到盘就能解密：\n")
 		b.WriteString("  - 盘丢了 = 所有用对应公钥加密的备份都能被解开；\n")
 		b.WriteString("  - 不要把这个盘插到不受你控制的机器上；\n")
-		b.WriteString("  - 更稳妥的做法：只带公钥，私钥留在电脑上（用 --without-private 重装）。\n")
+		b.WriteString("  - 更稳妥的做法：换成带口令的私钥，或只带公钥（--without-private 重装）。\n")
 	} else {
 		b.WriteString("本盘只带公钥，私钥未上盘：解密时需要从你的电脑取私钥。\n")
 	}

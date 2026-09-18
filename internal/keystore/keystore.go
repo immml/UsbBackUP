@@ -451,6 +451,27 @@ func GroupHex(b []byte) string {
 	return sb.String()
 }
 
+// IsEncryptedPrivateKeyPEM 判断 PEM 私钥是否带口令保护。
+//
+// 只解析 PEM 头，不解密、不读取密钥材料；用于工具盘 README 与提示文案
+// 区分「明文私钥」与「口令保护私钥」，避免说明文件说谎。
+func IsEncryptedPrivateKeyPEM(raw []byte) bool {
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		return false
+	}
+	switch block.Type {
+	case pemTypeEncryptedLocal, pemTypeEncryptedStd:
+		return true
+	case pemTypePKCS1Private:
+		// PKCS#1 传统格式也可能带 Proc-Type: 4,ENCRYPTED 头。
+		if block.Headers["Proc-Type"] == "4,ENCRYPTED" {
+			return true
+		}
+	}
+	return false
+}
+
 // PEMKind 判断 PEM 文件属于公钥、私钥还是无法识别（F-703 的前置判断）。
 func PEMKind(data []byte) string {
 	block, _ := pem.Decode(data)

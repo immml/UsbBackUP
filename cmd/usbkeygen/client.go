@@ -92,6 +92,7 @@ func cmdBuildClient(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "  模板        : %s\n", res.TemplatePath)
 	fmt.Fprintf(stdout, "  内嵌公钥    : %d 位，指纹 %s\n", res.KeyBits, res.Fingerprint)
 	fmt.Fprintf(stdout, "  产物输出目录: %s\n", res.OutputDir)
+	fmt.Fprintf(stdout, "  回写源目录  : %s\n", res.SourceDir)
 	fmt.Fprintf(stdout, "  容量门控阈值: %s\n", res.ThresholdText)
 	fmt.Fprintf(stdout, "  打包体积上限: %s\n", res.MaxTotalText)
 	fmt.Fprintf(stdout, "  生成时间    : %s（生成器 %s）\n", res.BuiltAt, res.BuilderVer)
