@@ -117,6 +117,8 @@ func printUsage(w io.Writer) {
 		"",
 		"install-usb 选项：",
 		"  --drive E:          目标 U 盘盘符（必填，必须是可移动磁盘）",
+		"  --subdir DIR        工具放在盘内的子目录（如 backup\\tools，默认盘根）",
+		"                      授权标记 .usbbackup-allow 始终写盘根，不受此项影响",
 		"  --public string     公钥路径（默认同目录 keys/usbbackup.pub.pem）",
 		"  --private string    私钥路径（默认同目录 keys/usbbackup.key.pem）",
 		"  --keys DIR          密钥目录（可代替上面两项）",

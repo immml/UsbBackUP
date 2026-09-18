@@ -25,6 +25,12 @@ var toolFiles = []string{
 type toolkitOptions struct {
 	// Dest 是目标根目录（U 盘根目录）。
 	Dest string
+	// SubDir 是工具在盘内的相对子目录（如 `backup\tools`）；空表示直接放盘根。
+	//
+	// 注意：`.usbbackup-allow` 不受它影响，永远写在 Dest 下——
+	// 授权标记只在卷根被检查（keyfile.checkAllowMarker 只读 `<root>\.usbbackup-allow`），
+	// 一旦挪进子目录，检测就只能退化为"扫到私钥文件名"，在大盘上会被扫描上限截断。
+	SubDir string
 	// ToolDir 是工具 exe 的来源目录（一般是本程序所在目录）。
 	ToolDir string
 	// PublicKeyPath / PrivateKeyPath 是密钥来源。
@@ -56,6 +62,7 @@ func cmdInstallUSB(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("install-usb", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	drive := fs.String("drive", "", "目标 U 盘盘符，如 E:（必填）")
+	subDir := fs.String("subdir", "", "工具在盘内的子目录，如 backup\\tools（默认放盘根）")
 	pub := fs.String("public", "", "公钥路径（默认与本程序同目录的 keys/usbbackup.pub.pem）")
 	priv := fs.String("private", "", "私钥路径（默认与本程序同目录的 keys/usbbackup.key.pem）")
 	keyDir := fs.String("keys", "", "密钥目录（同时给出公钥与私钥时可只写这一项）")
@@ -67,6 +74,13 @@ func cmdInstallUSB(args []string, stdout, stderr io.Writer) int {
 	}
 	if strings.TrimSpace(*drive) == "" {
 		fmt.Fprintln(stderr, "用法：usbkeygen install-usb --drive E: [--keys DIR] [--without-private] [--no-client] [--force]")
+		return cli.ExitUsage
+	}
+	// 先规范化再校验：非法值（绝对路径 / 含 ..）直接按"不指定"处理会让人以为生效了，
+	// 所以这里明确报错，而不是静默退化。
+	sub := cleanSubDir(*subDir)
+	if strings.TrimSpace(*subDir) != "" && sub == "" {
+		fmt.Fprintf(stderr, "错误：--subdir %q 不是合法的相对子目录（不接受绝对路径、盘符或 ..）。\n", *subDir)
 		return cli.ExitUsage
 	}
 
@@ -126,11 +140,15 @@ func cmdInstallUSB(args []string, stdout, stderr io.Writer) int {
 	}
 
 	fmt.Fprintf(stdout, "目标 U 盘  : %s（%s，剩余 %s）\n", root, emptyOr(vol.Label, "无卷标"), humanBytes(vol.FreeBytes))
+	if sub != "" {
+		fmt.Fprintf(stdout, "工具目录  : %s（授权标记仍写盘根）\n", filepath.Join(root, sub))
+	}
 	fmt.Fprintf(stdout, "公钥指纹  : %s\n", fpText)
 	fmt.Fprintf(stdout, "写入私钥  : %v\n\n", withPriv)
 
 	n, err := assembleToolkit(toolkitOptions{
 		Dest:           root,
+		SubDir:         sub,
 		ToolDir:        exeDir,
 		PublicKeyPath:  pubPath,
 		PrivateKeyPath: privPath,
@@ -156,8 +174,9 @@ func cmdInstallUSB(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	fmt.Fprintln(stdout)
-	fmt.Fprintln(stdout, "  用法：把本盘插到目标机器，运行 client.exe（先 accept 一次，之后静默）；")
-	fmt.Fprintln(stdout, "        取回 .usbk 后，用本盘上的 usbunseal.exe 解密还原。")
+	fmt.Fprintf(stdout, "  用法：把本盘插到目标机器，运行 %s（先 accept 一次，之后静默）；\n",
+		pathOnDisk(root, sub, "client.exe"))
+	fmt.Fprintf(stdout, "        取回 .usbk 后，用同目录的 usbunseal.exe 解密还原。\n")
 	return cli.ExitOK
 }
 
@@ -168,28 +187,33 @@ func cmdInstallUSB(args []string, stdout, stderr io.Writer) int {
 func assembleToolkit(opt toolkitOptions, out io.Writer) (int, error) {
 	written := 0
 
+	base, err := toolkitBaseDir(opt)
+	if err != nil {
+		return written, err
+	}
+
 	// 1) 工具本体：缺失的跳过（允许只带部分工具）。
 	for _, name := range toolFiles {
 		src := filepath.Join(opt.ToolDir, name)
 		if _, err := os.Stat(src); err != nil {
 			continue
 		}
-		if err := copyFile(src, filepath.Join(opt.Dest, name), opt.Force); err != nil {
+		if err := copyFile(src, filepath.Join(base, name), opt.Force); err != nil {
 			return written, fmt.Errorf("复制 %s 失败: %w", name, err)
 		}
 		written++
-		fmt.Fprintf(out, "  [OK] %s\n", name)
+		fmt.Fprintf(out, "  [OK] %s\n", relOnDisk(opt, name))
 	}
 
 	// 2) 客户端：优先复用同目录已有的，否则现场生成一个。
 	if opt.WithClient {
-		dst := filepath.Join(opt.Dest, "client.exe")
+		dst := filepath.Join(base, "client.exe")
 		clientSrc := filepath.Join(opt.ToolDir, "client.exe")
 		if _, err := os.Stat(clientSrc); err == nil {
 			if err := copyFile(clientSrc, dst, opt.Force); err != nil {
 				return written, fmt.Errorf("复制 client.exe 失败: %w", err)
 			}
-			fmt.Fprintln(out, "  [OK] client.exe（复用已有）")
+			fmt.Fprintf(out, "  [OK] %s（复用已有）\n", relOnDisk(opt, "client.exe"))
 		} else {
 			pubRaw, err := os.ReadFile(opt.PublicKeyPath)
 			if err != nil {
@@ -205,20 +229,21 @@ func assembleToolkit(opt toolkitOptions, out io.Writer) (int, error) {
 			if err != nil {
 				return written, fmt.Errorf("生成 client.exe 失败: %w", err)
 			}
-			fmt.Fprintf(out, "  [OK] client.exe（现场生成，%d 位公钥）\n", res.KeyBits)
+			fmt.Fprintf(out, "  [OK] %s（现场生成，%d 位公钥）\n",
+				relOnDisk(opt, "client.exe"), res.KeyBits)
 		}
 		written++
 	}
 
 	// 3) 密钥目录。
-	keyDst := filepath.Join(opt.Dest, "keys")
+	keyDst := filepath.Join(base, "keys")
 	if err := os.MkdirAll(keyDst, 0o755); err != nil {
 		return written, fmt.Errorf("创建 keys 目录失败: %w", err)
 	}
 	if err := copyFile(opt.PublicKeyPath, filepath.Join(keyDst, "usbbackup.pub.pem"), opt.Force); err != nil {
 		return written, fmt.Errorf("写入公钥失败: %w", err)
 	}
-	fmt.Fprintln(out, "  [OK] keys/usbbackup.pub.pem")
+	fmt.Fprintf(out, "  [OK] %s\n", relOnDisk(opt, filepath.Join("keys", "usbbackup.pub.pem")))
 	written++
 	if opt.WithPrivate {
 		if err := copyFile(opt.PrivateKeyPath, filepath.Join(keyDst, "usbbackup.key.pem"), opt.Force); err != nil {
@@ -228,7 +253,8 @@ func assembleToolkit(opt toolkitOptions, out io.Writer) (int, error) {
 		if raw, err := os.ReadFile(opt.PrivateKeyPath); err == nil && keystore.IsEncryptedPrivateKeyPEM(raw) {
 			kind = "口令保护"
 		}
-		fmt.Fprintf(out, "  [OK] keys/usbbackup.key.pem（%s）\n", kind)
+		fmt.Fprintf(out, "  [OK] %s（%s）\n",
+			relOnDisk(opt, filepath.Join("keys", "usbbackup.key.pem")), kind)
 		written++
 	}
 
@@ -256,14 +282,74 @@ func assembleToolkit(opt toolkitOptions, out io.Writer) (int, error) {
 
 	// 5) 说明文件（每次都重写，保证与盘内实际内容一致）。
 	//    README 必须如实反映私钥是否带口令，否则现场的人会按错误的风险等级处理。
+	//    它落在工具目录里，所以文中的相对路径（keys\…）在有无子目录时都成立。
 	readme := toolkitReadme(fpText, opt.WithPrivate, privateIsEncrypted(opt))
-	if err := writeFile(filepath.Join(opt.Dest, "README.txt"), []byte(readme), true); err != nil {
+	if err := writeFile(filepath.Join(base, "README.txt"), []byte(readme), true); err != nil {
 		return written, fmt.Errorf("写入 README.txt 失败: %w", err)
 	}
-	fmt.Fprintln(out, "  [OK] README.txt")
+	fmt.Fprintf(out, "  [OK] %s\n", relOnDisk(opt, "README.txt"))
 	written++
 
 	return written, nil
+}
+
+// toolkitBaseDir 返回工具实际落盘的目录（= Dest/SubDir）。
+func toolkitBaseDir(opt toolkitOptions) (string, error) {
+	sub := cleanSubDir(opt.SubDir)
+	if sub == "" {
+		return opt.Dest, nil
+	}
+	base := filepath.Join(opt.Dest, sub)
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		return "", fmt.Errorf("创建工具目录 %s 失败: %w", base, err)
+	}
+	return base, nil
+}
+
+// cleanSubDir 规范化并校验 --subdir 的值。
+//
+// 只接受相对子路径：绝对路径、盘符、以及任何含 `..` 的写法一律拒绝——
+// 这个参数来自命令行，放任它逃出盘外就会变成"往任意目录写文件"。
+func cleanSubDir(sub string) string {
+	sub = strings.TrimSpace(sub)
+	if sub == "" {
+		return ""
+	}
+	sub = strings.ReplaceAll(sub, "/", string(filepath.Separator))
+	sub = filepath.Clean(sub)
+	if sub == "." || sub == string(filepath.Separator) {
+		return ""
+	}
+	// `\foo` / `/foo` 在 Windows 上既不是 IsAbs 也没有盘符，
+	// 但拼到 `E:` 后面会变成 `E:\foo`——看起来合法，实则指向盘根而非子目录，
+	// 与使用者意图不符，直接拒掉。
+	if strings.HasPrefix(sub, string(filepath.Separator)) || strings.HasPrefix(sub, "/") {
+		return ""
+	}
+	if filepath.IsAbs(sub) || filepath.VolumeName(sub) != "" {
+		return ""
+	}
+	if sub == ".." || strings.HasPrefix(sub, ".."+string(filepath.Separator)) ||
+		strings.Contains(sub, string(filepath.Separator)+"..") {
+		return ""
+	}
+	return sub
+}
+
+// relOnDisk 把盘内相对路径显示成"从盘根算起"的形式，方便核对落点。
+func relOnDisk(opt toolkitOptions, name string) string {
+	if sub := cleanSubDir(opt.SubDir); sub != "" {
+		return filepath.Join(sub, name)
+	}
+	return name
+}
+
+// pathOnDisk 拼出盘内文件的完整路径，用于收尾提示。
+func pathOnDisk(root, sub, name string) string {
+	if sub != "" {
+		return filepath.Join(root, sub, name)
+	}
+	return filepath.Join(root, name)
 }
 
 // privateIsEncrypted 判断本次上盘的私钥是否带口令保护。
@@ -307,14 +393,14 @@ func toolkitReadme(fingerprint string, hasPriv, privEncrypted bool) string {
 	fmt.Fprintf(&b, "  %s\n\n", fingerprint)
 	if hasPriv && privEncrypted {
 		b.WriteString("[!] 私钥风险（口令保护）\n")
-		b.WriteString("  本盘 keys/usbbackup.key.pem 带口令保护：不知道口令则无法解开。\n")
+		b.WriteString("  本目录下的 keys\\usbbackup.key.pem 带口令保护：不知道口令则无法解开。\n")
 		b.WriteString("  但口令保护不等于安全——盘和口令同时丢失就等于明文丢失：\n")
 		b.WriteString("  - 不要把口令写在这个盘上的任何文件里（包括本文件）；\n")
 		b.WriteString("  - 不要把这个盘插到不受你控制的机器上；\n")
 		b.WriteString("  - 解密时会提示输入口令（usbunseal --pass）。\n")
 	} else if hasPriv {
 		b.WriteString("[!] 私钥风险（明文，高风险）\n")
-		b.WriteString("  本盘 keys/usbbackup.key.pem 是**明文私钥**，拿到盘就能解密：\n")
+		b.WriteString("  本目录下的 keys\\usbbackup.key.pem 是**明文私钥**，拿到盘就能解密：\n")
 		b.WriteString("  - 盘丢了 = 所有用对应公钥加密的备份都能被解开；\n")
 		b.WriteString("  - 不要把这个盘插到不受你控制的机器上；\n")
 		b.WriteString("  - 更稳妥的做法：换成带口令的私钥，或只带公钥（--without-private 重装）。\n")

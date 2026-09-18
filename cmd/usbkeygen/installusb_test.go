@@ -176,6 +176,64 @@ func TestAssembleRefusesOverwriteWithoutForce(t *testing.T) {
 	}
 }
 
+func TestAssembleToolkitIntoSubDir(t *testing.T) {
+	// 工具可以收进子目录，但授权标记必须留在盘根——
+	// keyfile 只在 <盘根>\.usbbackup-allow 处检查标记，挪走就检测不到。
+	_, pub, priv := writeTestKeys(t)
+	dest := t.TempDir()
+
+	n, err := assembleToolkit(toolkitOptions{
+		Dest: dest, SubDir: filepath.Join("backup", "tools"), ToolDir: fakeToolDir(t),
+		PublicKeyPath: pub, PrivateKeyPath: priv,
+		WithPrivate: true, WithClient: true, Force: true,
+	}, io.Discard)
+	if err != nil {
+		t.Fatalf("assembleToolkit 失败: %v", err)
+	}
+	if n < 6 {
+		t.Errorf("写入项数偏少: %d", n)
+	}
+
+	tools := filepath.Join(dest, "backup", "tools")
+	for _, rel := range []string{"usbunseal.exe", "client.exe", "README.txt", filepath.Join("keys", "usbbackup.key.pem")} {
+		if _, err := os.Stat(filepath.Join(tools, rel)); err != nil {
+			t.Errorf("子目录内缺少 %s: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dest, ".usbbackup-allow")); err != nil {
+		t.Errorf("授权标记必须在盘根: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "usbunseal.exe")); err == nil {
+		t.Error("工具不应再出现在盘根")
+	}
+}
+
+func TestCleanSubDirRejectsEscape(t *testing.T) {
+	bad := []string{
+		filepath.Join("..", "escape"),
+		"..",
+		`C:\Windows`,
+		`\absolute`,
+		"/etc",
+	}
+	for _, v := range bad {
+		if got := cleanSubDir(v); got != "" {
+			t.Errorf("cleanSubDir(%q) = %q，应被拒绝", v, got)
+		}
+	}
+	good := map[string]string{
+		filepath.Join("backup", "tools"): filepath.Join("backup", "tools"),
+		"backup/tools":                   filepath.Join("backup", "tools"),
+		"":                               "",
+		"   ":                            "",
+	}
+	for in, want := range good {
+		if got := cleanSubDir(in); got != want {
+			t.Errorf("cleanSubDir(%q) = %q，期望 %q", in, got, want)
+		}
+	}
+}
+
 func TestToolkitReadmeWarnsOnlyWhenPrivatePresent(t *testing.T) {
 	withPriv := toolkitReadme("aa bb cc", true, false)
 	if !strings.Contains(withPriv, "明文私钥") {

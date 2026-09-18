@@ -593,8 +593,15 @@ func cmdProbe(args []string, cfgPath string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "错误：构造检测器失败：%v\n", err)
 		return cli.ExitRuntime
 	}
+	// 客户端模式下 cfg.PublicKeyPath 是占位串 `<内嵌于客户端>`，读它必然失败。
+	// 必须先用内嵌公钥算指纹，否则标记判定拿不到期望值，会退化成全盘遍历
+	// （在装着大量文件的盘上会被扫描上限截断，probe 的结论就不可信了）。
 	fp := ""
-	if cfg.PublicKeyPath != "" {
+	if clientBuild.ok && clientBuild.pub != nil {
+		if _, got, err := keystore.PublicKeyFingerprint(clientBuild.pub); err == nil {
+			fp = got
+		}
+	} else if cfg.PublicKeyPath != "" {
 		if got, err := loadPubFingerprint(cfg.PublicKeyPath); err == nil {
 			fp = got
 		}
